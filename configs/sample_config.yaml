@@ -1,0 +1,40 @@
+schema_version: "1.0"
+sample_id: "example_si_grating"
+Lx_nm: 500.0
+Ly_nm: 500.0
+superstrate_material: Air
+substrate_material: Si
+layers:
+  - name: grating
+    type: grating_1d
+    thickness_nm: 100.0
+    Lx_nm: 500.0
+    Ly_nm: 500.0
+    background_material: Air
+    shapes:
+      - geometry:
+          type: rectangle
+          cx: 250.0
+          cy: 250.0
+          width: 250.0
+          height: 500.0
+          sidewall_angle_deg: 90.0
+          vertices: []
+        material: Si
+materials:
+  Si:
+    name: Si
+    source: library
+    library_name: Si
+  SiO2:
+    name: SiO2
+    source: library
+    library_name: SiO2
+  Air:
+    name: Air
+    source: constant_nk
+    n: 1.0
+    k: 0.0
+metadata:
+  process_step: "etch"
+  notes: "Example 500nm pitch Si grating on SiO2 substrate"
