@@ -1,0 +1,13 @@
+# Air optical constants
+# n = 1.0, k = 0.0 throughout UV-NIR (vacuum approximation)
+# Source: standard reference (NIST, refractiveindex.info)
+wavelength_nm,n,k
+200,1.0,0.0
+300,1.0,0.0
+400,1.0,0.0
+500,1.0,0.0
+600,1.0,0.0
+700,1.0,0.0
+800,1.0,0.0
+900,1.0,0.0
+1000,1.0,0.0
