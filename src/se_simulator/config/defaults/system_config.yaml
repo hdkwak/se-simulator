@@ -1,0 +1,21 @@
+schema_version: "1.0"
+instrument_name: "SE Simulator Reference Instrument"
+serial_number: "SIM-001"
+polarizer_angle_deg: 45.0
+analyzer_angle_deg: 45.0
+compensator_angle_deg: 0.0
+compensator_retardance:
+  type: constant
+  value: 90.0
+  coefficients: []
+  file_path: null
+n_revolutions: 20
+n_points_per_revolution: 50
+calibration_errors:
+  delta_P_deg: 0.0
+  delta_A_deg: 0.0
+  delta_C_deg: 0.0
+  delta_retardance_deg: 0.0
+depolarization:
+  aoi_spread_deg: 0.0
+  wavelength_bandwidth_nm: 0.0

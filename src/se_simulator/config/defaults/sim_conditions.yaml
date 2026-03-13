@@ -1,0 +1,21 @@
+schema_version: "1.0"
+aoi_deg: 65.0
+azimuth_deg: 0.0
+wavelengths:
+  range: [300.0, 800.0, 2.0]
+n_harmonics_x: 5
+n_harmonics_y: 5
+li_factorization: true
+parallel_wavelengths: false
+output_jones: false
+output_orders: false
+fitting:
+  fit_signals: ["psi", "delta"]
+  sigma_psi: 0.05
+  sigma_delta: 0.1
+  top_k_candidates: 10
+  use_interpolation: true
+  use_refinement: false
+  refinement_algo: "Nelder-Mead"
+  max_iterations: 200
+  convergence_tol: 1.0e-5
