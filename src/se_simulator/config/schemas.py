@@ -1,0 +1,196 @@
+"""Pydantic v2 configuration schemas for SE-RCWA Simulator."""
+from __future__ import annotations
+
+from typing import Any, Literal
+
+from pydantic import BaseModel, Field, model_validator
+
+
+# ---------------------------------------------------------------------------
+# Material spec
+# ---------------------------------------------------------------------------
+
+class MaterialSpec(BaseModel):
+    """Optical material specification."""
+
+    name: str
+    source: Literal["library", "constant_nk", "cauchy", "sellmeier", "drude", "tauc_lorentz"]
+    # library
+    library_name: str | None = None
+    # constant n/k
+    n: float | None = None
+    k: float | None = None
+    # dispersion model coefficients
+    coefficients: list[float] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Shape / layer geometry
+# ---------------------------------------------------------------------------
+
+class ShapeGeometry(BaseModel):
+    """Geometry of a single shape region in a grating layer."""
+
+    type: Literal["rectangle", "ellipse", "polygon"] = "rectangle"
+    cx: float = 0.0
+    cy: float = 0.0
+    width: float = 100.0
+    height: float = 100.0
+    sidewall_angle_deg: float = 90.0
+    vertices: list[list[float]] = Field(default_factory=list)  # for polygon
+
+
+class ShapeRegion(BaseModel):
+    """A filled region inside a grating layer."""
+
+    geometry: ShapeGeometry = Field(default_factory=ShapeGeometry)
+    material: str = "Si"
+
+
+class GratingLayer(BaseModel):
+    """A single layer in the sample stack."""
+
+    name: str = "layer"
+    type: Literal["uniform", "grating_1d", "grating_2d"] = "uniform"
+    thickness_nm: float = 100.0
+    Lx_nm: float = 500.0  # noqa: N815
+    Ly_nm: float = 500.0  # noqa: N815
+    background_material: str = "Air"
+    shapes: list[ShapeRegion] = Field(default_factory=list)
+    incoherent: bool = False
+
+
+# ---------------------------------------------------------------------------
+# Sample config
+# ---------------------------------------------------------------------------
+
+class SampleConfig(BaseModel):
+    """Full sample (layer stack + materials) configuration."""
+
+    schema_version: str = "1.0"
+    sample_id: str = "unnamed"
+    Lx_nm: float = 500.0  # noqa: N815
+    Ly_nm: float = 500.0  # noqa: N815
+    superstrate_material: str = "Air"
+    substrate_material: str = "Si"
+    layers: list[GratingLayer] = Field(default_factory=list)
+    materials: dict[str, MaterialSpec] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Wavelength spec
+# ---------------------------------------------------------------------------
+
+class WavelengthSpec(BaseModel):
+    """Either an explicit list or a (start, stop, step) range."""
+
+    explicit: list[float] | None = None
+    range: tuple[float, float, float] | None = None  # (start, stop, step)
+
+    @model_validator(mode="after")
+    def _check_one_set(self) -> "WavelengthSpec":
+        if self.explicit is None and self.range is None:
+            msg = "WavelengthSpec: exactly one of 'explicit' or 'range' must be set."
+            raise ValueError(msg)
+        return self
+
+
+# ---------------------------------------------------------------------------
+# Fitting conditions
+# ---------------------------------------------------------------------------
+
+class FittingConditions(BaseModel):
+    """Parameters controlling the fitting pipeline."""
+
+    fit_signals: list[str] = Field(default_factory=lambda: ["psi", "delta"])
+    sigma_psi: float = 0.05
+    sigma_delta: float = 0.1
+    top_k_candidates: int = 10
+    use_interpolation: bool = True
+    use_refinement: bool = False
+    refinement_algo: str = "Nelder-Mead"
+    max_iterations: int = 200
+    convergence_tol: float = 1e-5
+
+
+# ---------------------------------------------------------------------------
+# Simulation conditions
+# ---------------------------------------------------------------------------
+
+class SimConditions(BaseModel):
+    """Simulation run conditions."""
+
+    schema_version: str = "1.0"
+    aoi_deg: float = 65.0
+    azimuth_deg: float = 0.0
+    wavelengths: WavelengthSpec = Field(
+        default_factory=lambda: WavelengthSpec(range=(300.0, 800.0, 2.0))
+    )
+    n_harmonics_x: int = 5
+    n_harmonics_y: int = 5
+    li_factorization: bool = True
+    parallel_wavelengths: bool = False
+    output_jones: bool = False
+    output_orders: bool = False
+    fitting: FittingConditions = Field(default_factory=FittingConditions)
+    engine_override: Literal["auto", "tmm", "rcwa"] = "auto"
+
+
+# ---------------------------------------------------------------------------
+# Calibration errors
+# ---------------------------------------------------------------------------
+
+class CalibrationErrors(BaseModel):
+    """Systematic offset errors in the optical components."""
+
+    delta_P_deg: float = 0.0  # noqa: N815
+    delta_A_deg: float = 0.0  # noqa: N815
+    delta_C_deg: float = 0.0  # noqa: N815
+    delta_retardance_deg: float = 0.0  # noqa: N815
+
+
+# ---------------------------------------------------------------------------
+# Compensator retardance model
+# ---------------------------------------------------------------------------
+
+class CompensatorRetardanceModel(BaseModel):
+    """Model for wavelength-dependent compensator retardance."""
+
+    type: Literal["constant", "polynomial", "tabulated"] = "constant"
+    value: float = 90.0           # used when type=="constant"
+    coefficients: list[float] = Field(default_factory=list)  # ascending order
+    file_path: str | None = None  # for tabulated
+
+
+# ---------------------------------------------------------------------------
+# Depolarization config
+# ---------------------------------------------------------------------------
+
+class DepolarizationConfig(BaseModel):
+    """Incoherent averaging parameters."""
+
+    aoi_spread_deg: float = 0.0
+    wavelength_bandwidth_nm: float = 0.0
+
+
+# ---------------------------------------------------------------------------
+# System config
+# ---------------------------------------------------------------------------
+
+class SystemConfig(BaseModel):
+    """Instrument (ellipsometer) configuration."""
+
+    schema_version: str = "1.0"
+    instrument_name: str
+    serial_number: str = ""
+    polarizer_angle_deg: float
+    analyzer_angle_deg: float
+    compensator_angle_deg: float = 0.0
+    compensator_retardance: CompensatorRetardanceModel = Field(
+        default_factory=CompensatorRetardanceModel
+    )
+    n_revolutions: int = 20
+    n_points_per_revolution: int = 50
+    calibration_errors: CalibrationErrors = Field(default_factory=CalibrationErrors)
+    depolarization: DepolarizationConfig = Field(default_factory=DepolarizationConfig)
