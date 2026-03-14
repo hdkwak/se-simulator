@@ -16,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from se_simulator.config.schemas import GratingLayer, MaterialSpec, SampleConfig
+from se_simulator.config.schemas import GratingLayer, MaterialSpec, SampleConfig, Stack, StackLayer
 from se_simulator.materials.database import MaterialDatabase
 
 
@@ -42,6 +42,7 @@ class LayerStackWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._sample: SampleConfig | None = None
+        self._stack: Stack | None = None
         self._setup_ui()
 
     def _setup_ui(self) -> None:
@@ -90,11 +91,55 @@ class LayerStackWidget(QWidget):
     # Public API
     # ------------------------------------------------------------------
 
-    def load_sample(self, sample: SampleConfig) -> None:
-        """Load layers from a SampleConfig."""
-        self._sample = sample
+    def load_stack(self, stack: Stack) -> None:
+        """Load layers from a Stack object (primary API)."""
+        self._stack = stack
+        # Sync _sample so existing helpers still work
+        self._sample = stack.to_sample_config()
         self._refresh_table()
         self._refresh_substrate_combo()
+
+    def load_sample(self, sample: SampleConfig) -> None:
+        """Load layers from a SampleConfig (backward-compat shim)."""
+        self._sample = sample
+        self._stack = None
+        self._refresh_table()
+        self._refresh_substrate_combo()
+
+    def get_stack(self) -> Stack | None:
+        """Read current UI state and return a Stack, or None if nothing is loaded."""
+        if self._sample is None:
+            return None
+        # Build Stack from the current _sample state
+        def _mat_spec(name: str) -> MaterialSpec:
+            return MaterialSpec(library_name=name, source="library", name=name)
+
+        sup_name = self._sample.superstrate_material
+        sub_name = self._sample.substrate_material
+        stack_layers = []
+        for gl in self._sample.layers:
+            mat_name = gl.background_material
+            sl = StackLayer(
+                name=gl.name,
+                type=gl.type,
+                thickness_nm=gl.thickness_nm,
+                Lx_nm=gl.Lx_nm,
+                Ly_nm=gl.Ly_nm,
+                material=_mat_spec(mat_name),
+                shapes=gl.shapes,
+                incoherent=gl.incoherent,
+            )
+            stack_layers.append(sl)
+        return Stack(
+            superstrate=_mat_spec(sup_name),
+            substrate=_mat_spec(sub_name),
+            layers=stack_layers,
+        )
+
+    def get_sample_config(self) -> SampleConfig | None:
+        """Return current state as SampleConfig (backward-compat shim)."""
+        stack = self.get_stack()
+        return stack.to_sample_config() if stack is not None else None
 
     def get_layers(self) -> list[GratingLayer]:
         """Return the current list of layers (order matches table rows)."""

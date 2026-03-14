@@ -72,7 +72,7 @@ class ConfigManager:
     # Wavelength helper
     # ------------------------------------------------------------------
 
-    def get_wavelengths(self, spec: WavelengthSpec) -> "np.ndarray":  # type: ignore[name-defined]  # noqa: F821
+    def get_wavelengths(self, spec: WavelengthSpec) -> np.ndarray:  # type: ignore[name-defined]  # noqa: F821
         """Return a sorted numpy array of wavelengths from a WavelengthSpec."""
         import numpy as np
 

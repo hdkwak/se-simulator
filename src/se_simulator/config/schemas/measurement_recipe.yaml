@@ -1,0 +1,55 @@
+# measurement_recipe.yaml — Measurement Recipe schema (PRD v5 §10.5)
+metadata:
+  recipe_type: measurement
+  version: "1.0"
+  created: ""
+  author: ""
+  description: ""
+  material_db_version: ""
+
+forward_model:
+  sample:
+    inline:
+      superstrate: { library_name: Air }
+      substrate:   { library_name: Si }
+      layers:
+        - type: uniform
+          thickness_nm: 100.0
+          material: { library_name: SiO2 }
+  simulation_conditions:
+    wavelength_start_nm: 300.0
+    wavelength_end_nm: 900.0
+    wavelength_step_nm: 2.0
+    aoi_degrees: 65.0
+    azimuth_degrees: 0.0
+    polarizer_degrees: 45.0
+    analyzer_degrees: 45.0
+  engine_override: auto
+  system:
+    system_config_ref: "./system_config.yaml"
+
+floating_parameters:
+  - name: "sio2_thickness"
+    target_field: "forward_model.sample.inline.layers[0].thickness_nm"
+    min: 0.0
+    max: 500.0
+    initial: 100.0
+    step: 1.0
+    units: nm
+
+fitting_configuration:
+  fitting_mode: auto
+  fit_signals: [psi, delta]
+  weights: uniform
+  optimizer: levenberg_marquardt
+  max_iterations: 200
+  convergence_tolerance: 1.0e-6
+  gradient_step: 1.0e-4
+
+library_reference:
+  library_file: ""
+
+output_options:
+  save_recipe_with_results: true
+  save_fit_report: true
+  save_fitted_spectrum: true

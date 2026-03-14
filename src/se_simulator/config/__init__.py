@@ -12,6 +12,8 @@ from se_simulator.config.schemas import (
     ShapeGeometry,
     ShapeRegion,
     SimConditions,
+    Stack,
+    StackLayer,
     SystemConfig,
     WavelengthSpec,
 )
@@ -29,6 +31,8 @@ __all__ = [
     "ShapeGeometry",
     "ShapeRegion",
     "SimConditions",
+    "Stack",
+    "StackLayer",
     "SystemConfig",
     "WavelengthSpec",
 ]

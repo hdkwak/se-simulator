@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QSplitter,
     QStackedWidget,
     QStatusBar,
+    QToolBar,
     QTreeWidget,
     QTreeWidgetItem,
     QWidget,
@@ -91,6 +92,7 @@ class MainWindow(QMainWindow):
         self.resize(1400, 900)
 
         self._build_menu()
+        self._build_toolbar()
         self._build_central_widget()
         self._build_status_bar()
 
@@ -151,6 +153,147 @@ class MainWindow(QMainWindow):
         help_menu.addSeparator()
         help_menu.addAction("About", self._show_about)
 
+        # Add Recipe Editor to File menu (after the existing items)
+        file_menu.addSeparator()
+        file_menu.addAction("Recipe Editor…", self._open_recipe_editor)
+
+    # ------------------------------------------------------------------
+    # Toolbar
+    # ------------------------------------------------------------------
+
+    def _build_toolbar(self) -> None:
+        toolbar = QToolBar("Recipe Toolbar", self)
+        self.addToolBar(toolbar)
+
+        self._btn_load_sim_recipe = QPushButton("Load Simulation Recipe")
+        self._btn_load_meas_recipe = QPushButton("Load Measurement Recipe")
+        self._btn_save_as_recipe = QPushButton("Save as Recipe")
+
+        toolbar.addWidget(self._btn_load_sim_recipe)
+        toolbar.addWidget(self._btn_load_meas_recipe)
+        toolbar.addWidget(self._btn_save_as_recipe)
+
+        self._btn_load_sim_recipe.clicked.connect(self._load_simulation_recipe)
+        self._btn_load_meas_recipe.clicked.connect(self._load_measurement_recipe)
+        self._btn_save_as_recipe.clicked.connect(self._save_as_recipe)
+
+    # ------------------------------------------------------------------
+    # Recipe actions
+    # ------------------------------------------------------------------
+
+    def _load_simulation_recipe(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Simulation Recipe", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if not path:
+            return
+        from se_simulator.recipe.manager import RecipeManager, RecipeValidationError
+
+        manager = RecipeManager()
+        try:
+            recipe = manager.load_simulation_recipe(Path(path))
+        except RecipeValidationError as exc:
+            errors = [line.strip() for line in str(exc).splitlines() if line.strip()]
+            QMessageBox.critical(self, "Validation Error", "\n".join(errors))
+            return
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Load Error", str(exc))
+            return
+        self._on_simulation_recipe_loaded(recipe, Path(path))
+
+    def _load_measurement_recipe(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Measurement Recipe", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if not path:
+            return
+        from se_simulator.recipe.manager import RecipeManager, RecipeValidationError
+
+        manager = RecipeManager()
+        try:
+            recipe = manager.load_measurement_recipe(Path(path))
+        except RecipeValidationError as exc:
+            errors = [line.strip() for line in str(exc).splitlines() if line.strip()]
+            QMessageBox.critical(self, "Validation Error", "\n".join(errors))
+            return
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Load Error", str(exc))
+            return
+        self._on_measurement_recipe_loaded(recipe, Path(path))
+
+    def _save_as_recipe(self) -> None:
+        """Context-sensitive: save as simulation or measurement recipe."""
+        current_idx = self._center_stack.currentIndex()
+        if current_idx == _PAGE_SIM:
+            self._save_as_simulation_recipe()
+        elif current_idx == _PAGE_FITTING:
+            self._save_as_measurement_recipe()
+        else:
+            self._set_status("Save as Recipe: navigate to Simulation or Fitting tab first.")
+
+    def _save_as_simulation_recipe(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save as Simulation Recipe", "", "YAML Files (*.yaml);;All Files (*)"
+        )
+        if not path:
+            return
+        sim = self._sim_panel.build_sim()
+        wl = sim.wavelengths.range
+        if wl is None:
+            self._set_status("Cannot save: wavelength range not set.")
+            return
+        from se_simulator.config.recipe import (
+            RecipeMetadata,
+            SampleRef,
+            SimulationConditionsEmbed,
+            SimulationRecipe,
+        )
+        from se_simulator.recipe.manager import RecipeManager
+
+        meta = RecipeMetadata(recipe_type="simulation")
+        conds = SimulationConditionsEmbed(
+            wavelength_start_nm=wl[0],
+            wavelength_end_nm=wl[1],
+            wavelength_step_nm=wl[2],
+            aoi_degrees=sim.aoi_deg,
+            azimuth_degrees=sim.azimuth_deg,
+        )
+        recipe = SimulationRecipe(
+            metadata=meta,
+            sample=SampleRef(inline={"superstrate": {}, "substrate": {}, "layers": []}),
+            simulation_conditions=conds,
+        )
+        manager = RecipeManager()
+        try:
+            manager.save_simulation_recipe(recipe, Path(path))
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Save Error", str(exc))
+            return
+        self._set_status(f"Simulation recipe saved to {path}")
+
+    def _save_as_measurement_recipe(self) -> None:
+        self._set_status("Save as Measurement Recipe (not yet fully implemented).")
+
+    def _on_simulation_recipe_loaded(self, recipe: object, path: Path) -> None:
+        """Handle a successfully loaded simulation recipe."""
+        self._sim_panel.load_recipe(recipe, path)
+        # Switch to simulation page
+        self._center_stack.setCurrentIndex(_PAGE_SIM)
+        self._set_status(f"Simulation recipe loaded: {path.name}")
+
+    def _on_measurement_recipe_loaded(self, recipe: object, path: Path) -> None:
+        """Handle a successfully loaded measurement recipe."""
+        self._fitting_workspace.load_measurement_recipe(recipe, path)
+        # Switch to fitting page
+        self._center_stack.setCurrentIndex(_PAGE_FITTING)
+        self._set_status(f"Measurement recipe loaded: {path.name}")
+
+    def _open_recipe_editor(self) -> None:
+        from se_simulator.ui.recipe_editor import RecipeEditorDialog
+
+        dlg = RecipeEditorDialog(parent=self)
+        dlg.exec()
+
     # ------------------------------------------------------------------
     # Central widget (splitter with 3 panels)
     # ------------------------------------------------------------------
@@ -199,6 +342,13 @@ class MainWindow(QMainWindow):
         self._structure_editor = StructureEditor()
         self._structure_editor.sample_changed.connect(self._on_sample_changed)
         self._center_stack.addWidget(self._structure_editor)  # index 1
+
+        # Load a default sample so the layer stack is populated even when no
+        # project directory is provided.  _load_project_configs() will overwrite
+        # this if a project is opened.
+        if self._sample_config is None:
+            self._sample_config = _make_default_sample()
+            self._structure_editor.load_sample(self._sample_config)
 
         # Page 2: SimulationPanel
         from se_simulator.ui.widgets.sim_panel import SimulationPanel

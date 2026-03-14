@@ -3,8 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
-
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # ---------------------------------------------------------------------------
 # Material spec
@@ -89,7 +88,7 @@ class WavelengthSpec(BaseModel):
     range: tuple[float, float, float] | None = None  # (start, stop, step)
 
     @model_validator(mode="after")
-    def _check_one_set(self) -> "WavelengthSpec":
+    def _check_one_set(self) -> WavelengthSpec:
         if self.explicit is None and self.range is None:
             msg = "WavelengthSpec: exactly one of 'explicit' or 'range' must be set."
             raise ValueError(msg)
@@ -194,3 +193,71 @@ class SystemConfig(BaseModel):
     n_points_per_revolution: int = 50
     calibration_errors: CalibrationErrors = Field(default_factory=CalibrationErrors)
     depolarization: DepolarizationConfig = Field(default_factory=DepolarizationConfig)
+
+
+# ---------------------------------------------------------------------------
+# Stack — first-class sample representation (Phase 1 addition)
+# ---------------------------------------------------------------------------
+
+class StackLayer(BaseModel):
+    """A single layer in a Stack, owning its MaterialSpec directly."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = "layer"
+    type: Literal["uniform", "grating_1d", "grating_2d"] = "uniform"
+    thickness_nm: float = 100.0
+    Lx_nm: float = 500.0  # noqa: N815
+    Ly_nm: float = 500.0  # noqa: N815
+    material: MaterialSpec
+    shapes: list[ShapeRegion] = Field(default_factory=list)
+    incoherent: bool = False
+
+
+class Stack(BaseModel):
+    """First-class sample representation that bridges to SampleConfig for engine use."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: str = "1.0"
+    sample_id: str = "unnamed"
+    superstrate: MaterialSpec
+    substrate: MaterialSpec
+    layers: list[StackLayer] = Field(default_factory=list)
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+    def to_sample_config(self) -> SampleConfig:
+        """Convert to SampleConfig for consumption by the RCWA engine."""
+
+        def _mat_key(mat: MaterialSpec) -> str:
+            return mat.library_name if mat.library_name is not None else mat.name
+
+        materials: dict[str, MaterialSpec] = {}
+        materials[_mat_key(self.superstrate)] = self.superstrate
+        materials[_mat_key(self.substrate)] = self.substrate
+
+        layers_out: list[GratingLayer] = []
+        for sl in self.layers:
+            mat_key = _mat_key(sl.material)
+            materials[mat_key] = sl.material
+            gl = GratingLayer(
+                name=sl.name,
+                type=sl.type,
+                thickness_nm=sl.thickness_nm,
+                Lx_nm=sl.Lx_nm,
+                Ly_nm=sl.Ly_nm,
+                background_material=mat_key,
+                shapes=sl.shapes,
+                incoherent=sl.incoherent,
+            )
+            layers_out.append(gl)
+
+        return SampleConfig(
+            schema_version=self.schema_version,
+            sample_id=self.sample_id,
+            superstrate_material=_mat_key(self.superstrate),
+            substrate_material=_mat_key(self.substrate),
+            layers=layers_out,
+            materials=materials,
+            metadata=self.metadata,
+        )

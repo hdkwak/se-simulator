@@ -1,0 +1,26 @@
+metadata:
+  recipe_type: simulation
+  version: '1.0'
+  created: '2026-03-14T01:39:15.212329+00:00'
+  author: ''
+  description: ''
+  material_db_version: ''
+sample:
+  inline:
+    superstrate: {}
+    substrate: {}
+    layers: []
+  ref:
+simulation_conditions:
+  wavelength_start_nm: 300.0
+  wavelength_end_nm: 800.0
+  wavelength_step_nm: 2.0
+  aoi_degrees: 65.0
+  azimuth_degrees: 0.0
+  polarizer_degrees: 45.0
+  analyzer_degrees: 45.0
+engine_override: auto
+output_options:
+  save_psi_delta: true
+  save_jones: false
+  save_mueller: false

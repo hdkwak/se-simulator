@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -10,6 +12,8 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QMessageBox,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -37,20 +41,52 @@ class SimulationPanel(QWidget):
         Emitted when the user clicks Stop.
     settings_changed(SimConditions):
         Emitted when any setting is changed by the user.
+    recipe_loaded(object, Path):
+        Emitted when a simulation recipe is successfully loaded.
     """
 
     run_requested = Signal()
     stop_requested = Signal()
     settings_changed = Signal(object)
+    recipe_loaded = Signal(object, object)  # (SimulationRecipe, Path)
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._sim: SimConditions | None = None
+        self._recipe: object | None = None
+        self._recipe_path: Path | None = None
+        self._recipe_modified: bool = False
         self._setup_ui()
 
     def _setup_ui(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(8, 8, 8, 8)
+
+        # Recipe section (collapsible)
+        recipe_group = QGroupBox("Recipe")
+        recipe_group.setCheckable(True)
+        recipe_group.setChecked(False)
+        recipe_layout = QVBoxLayout(recipe_group)
+
+        path_row = QHBoxLayout()
+        path_row.addWidget(QLabel("File:"))
+        self._recipe_path_edit = QLineEdit()
+        self._recipe_path_edit.setReadOnly(True)
+        self._recipe_path_edit.setPlaceholderText("None")
+        path_row.addWidget(self._recipe_path_edit)
+        recipe_layout.addLayout(path_row)
+
+        btn_row = QHBoxLayout()
+        self._btn_load_recipe = QPushButton("Load")
+        self._btn_clear_recipe = QPushButton("Clear")
+        self._btn_save_back = QPushButton("Save back to Recipe")
+        self._btn_save_back.setEnabled(False)
+        btn_row.addWidget(self._btn_load_recipe)
+        btn_row.addWidget(self._btn_clear_recipe)
+        btn_row.addStretch()
+        btn_row.addWidget(self._btn_save_back)
+        recipe_layout.addLayout(btn_row)
+        layout.addWidget(recipe_group)
 
         # Run controls
         run_group = QGroupBox("Run Controls")
@@ -149,6 +185,133 @@ class SimulationPanel(QWidget):
         # Connect signals
         self._btn_run.clicked.connect(self.run_requested)
         self._btn_stop.clicked.connect(self.stop_requested)
+        self._btn_load_recipe.clicked.connect(self._on_load_recipe_clicked)
+        self._btn_clear_recipe.clicked.connect(self._on_clear_recipe)
+        self._btn_save_back.clicked.connect(self._on_save_back)
+
+        # Track modifications after recipe load
+        self._aoi_spin.valueChanged.connect(self._mark_modified)
+        self._az_spin.valueChanged.connect(self._mark_modified)
+        self._nx_spin.valueChanged.connect(self._mark_modified)
+        self._ny_spin.valueChanged.connect(self._mark_modified)
+        self._wl_start.valueChanged.connect(self._mark_modified)
+        self._wl_stop.valueChanged.connect(self._mark_modified)
+        self._wl_step.valueChanged.connect(self._mark_modified)
+
+    # ------------------------------------------------------------------
+    # Recipe support
+    # ------------------------------------------------------------------
+
+    def load_recipe(self, recipe: object, path: Path) -> None:
+        """Populate UI from a SimulationRecipe and record the path."""
+        from se_simulator.recipe.manager import RecipeManager
+
+        manager = RecipeManager()
+        try:
+            _sample, sim = manager.decompose_simulation(recipe, recipe_path=path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Recipe Error", str(exc))
+            return
+
+        self._recipe = recipe
+        self._recipe_path = path
+        self._recipe_modified = False
+
+        # Block signals while populating to avoid marking as modified
+        self._set_blocking(True)
+        try:
+            self.load_sim(sim)
+        finally:
+            self._set_blocking(False)
+
+        self._recipe_path_edit.setText(str(path))
+        self._btn_save_back.setEnabled(True)
+        self.recipe_loaded.emit(recipe, path)
+
+    def _set_blocking(self, block: bool) -> None:
+        for widget in (
+            self._aoi_spin,
+            self._az_spin,
+            self._nx_spin,
+            self._ny_spin,
+            self._wl_start,
+            self._wl_stop,
+            self._wl_step,
+        ):
+            widget.blockSignals(block)
+
+    def _mark_modified(self) -> None:
+        if self._recipe_path is not None and not self._recipe_modified:
+            self._recipe_modified = True
+            current = self._recipe_path_edit.text()
+            if not current.endswith("*"):
+                self._recipe_path_edit.setText(current + "*")
+
+    def _on_load_recipe_clicked(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load Simulation Recipe", "", "YAML Files (*.yaml *.yml);;All Files (*)"
+        )
+        if not path:
+            return
+        from se_simulator.recipe.manager import RecipeManager, RecipeValidationError
+
+        manager = RecipeManager()
+        try:
+            recipe = manager.load_simulation_recipe(Path(path))
+        except RecipeValidationError as exc:
+            QMessageBox.critical(self, "Validation Error", str(exc))
+            return
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Load Error", str(exc))
+            return
+        self.load_recipe(recipe, Path(path))
+
+    def _on_clear_recipe(self) -> None:
+        self._recipe = None
+        self._recipe_path = None
+        self._recipe_modified = False
+        self._recipe_path_edit.setText("")
+        self._btn_save_back.setEnabled(False)
+
+    def _on_save_back(self) -> None:
+        if self._recipe is None or self._recipe_path is None:
+            return
+        from se_simulator.config.recipe import (
+            SimulationConditionsEmbed,
+        )
+        from se_simulator.recipe.manager import RecipeManager
+
+        sim = self.build_sim()
+        wl = sim.wavelengths.range
+        if wl is None:
+            return
+        new_conditions = SimulationConditionsEmbed(
+            wavelength_start_nm=wl[0],
+            wavelength_end_nm=wl[1],
+            wavelength_step_nm=wl[2],
+            aoi_degrees=sim.aoi_deg,
+            azimuth_degrees=sim.azimuth_deg,
+        )
+        recipe = self._recipe
+        if hasattr(recipe, "model_copy"):
+            recipe = recipe.model_copy(update={"simulation_conditions": new_conditions})
+
+        manager = RecipeManager()
+        try:
+            manager.save_simulation_recipe(recipe, self._recipe_path)
+        except Exception as exc:  # noqa: BLE001
+            QMessageBox.critical(self, "Save Error", str(exc))
+            return
+
+        self._recipe = recipe
+        self._recipe_modified = False
+        self._recipe_path_edit.setText(str(self._recipe_path))
+
+    # ------------------------------------------------------------------
+    # Existing API
+    # ------------------------------------------------------------------
 
     def load_sim(self, sim: SimConditions) -> None:
         """Populate controls from a SimConditions object."""

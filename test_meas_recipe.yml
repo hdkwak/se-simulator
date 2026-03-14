@@ -1,0 +1,69 @@
+metadata:
+  recipe_type: measurement
+  version: '1.0'
+  created: '2026-03-14T01:39:15.212329+00:00'
+  author: ''
+  description: 'SiO2 on Si — thickness fitting example'
+  material_db_version: ''
+
+forward_model:
+  sample:
+    inline:
+      superstrate:
+        library_name: Air
+      substrate:
+        library_name: Si
+      layers:
+      - name: SiO2 Layer
+        type: uniform
+        thickness_nm: 100.0
+        material:
+          library_name: SiO2
+  simulation_conditions:
+    wavelength_start_nm: 300.0
+    wavelength_end_nm: 800.0
+    wavelength_step_nm: 2.0
+    aoi_degrees: 65.0
+    azimuth_degrees: 0.0
+    polarizer_degrees: 45.0
+    analyzer_degrees: 45.0
+  engine_override: auto
+  system: {}
+
+floating_parameters:
+- name: SiO2 thickness
+  target_field: forward_model.sample.inline.layers[0].thickness_nm
+  min: 10.0
+  max: 500.0
+  initial: 100.0
+  step: 1.0
+  units: nm
+
+fitting_configuration:
+  fitting_mode: auto
+  fit_signals:
+  - psi
+  - delta
+  weights: uniform
+  optimizer: levenberg_marquardt
+  max_iterations: 200
+  convergence_tolerance: 1.0e-6
+  gradient_step: 1.0e-4
+
+library_reference:
+  library_file: ''
+
+output_options:
+  save_recipe_with_results: true
+  save_fit_report: true
+  save_fitted_spectrum: true
+results:
+  fitted_parameters:
+    SiO2 thickness: 80.09999999243891
+  fit_quality:
+    rmse: 2.8707172000970825e-07
+    chi2: 4.136990655952484e-11
+    n_iter: 13.0
+    converged: 1.0
+  engine_used: tmm_direct
+  timestamp: '2026-03-14T07:06:53.638225+00:00'

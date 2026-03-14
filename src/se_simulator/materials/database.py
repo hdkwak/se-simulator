@@ -17,13 +17,13 @@ class MaterialDatabase:
     """Resolve and cache optical-constant entries for named materials."""
 
     def __init__(self) -> None:
-        self._cache: dict[str, "MaterialEntry"] = {}
+        self._cache: dict[str, MaterialEntry] = {}
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def resolve(self, spec: "MaterialSpec") -> "MaterialEntry":
+    def resolve(self, spec: MaterialSpec) -> MaterialEntry:
         """Register a MaterialSpec and return the corresponding MaterialEntry."""
         from se_simulator.materials.interpolator import MaterialEntry, load_csv_library
         from se_simulator.materials.models import cauchy, drude, sellmeier, tauc_lorentz
@@ -82,8 +82,12 @@ class MaterialDatabase:
         k = entry.k_interp(wavelengths_nm)
         return (n + 1j * k) ** 2
 
+    def list_library_materials(self) -> list[str]:
+        """Return the stems of all CSV files in the built-in material library."""
+        return sorted(p.stem for p in _LIBRARY_DIR.glob("*.csv"))
+
     def check_extrapolation(
-        self, entry: "MaterialEntry", wavelengths_nm: np.ndarray
+        self, entry: MaterialEntry, wavelengths_nm: np.ndarray
     ) -> list[str]:
         """Return warning strings for wavelengths outside the tabulated range."""
         wl_min = entry.wavelengths_nm.min()

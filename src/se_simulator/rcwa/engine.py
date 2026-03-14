@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 def _resolve_sample_materials(sample: SampleConfig, materials_db: MaterialDatabase) -> None:
     """Pre-register all materials referenced in the sample into the database."""
     for spec in sample.materials.values():
-        if spec.name not in materials_db._entries:
+        if spec.name not in materials_db._cache:
             materials_db.resolve(spec)
 
 

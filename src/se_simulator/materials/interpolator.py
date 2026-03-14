@@ -31,8 +31,27 @@ class MaterialEntry:
 
 
 def load_csv_library(path: Path, name: str | None = None) -> MaterialEntry:
-    """Load a CSV optical-constants file with header 'wavelength_nm,n,k'."""
-    data = np.genfromtxt(path, delimiter=",", skip_header=1)
+    """Load a CSV optical-constants file with header 'wavelength_nm,n,k'.
+
+    The file may contain any number of ``#``-prefixed comment lines before the
+    column-name header row (``wavelength_nm,n,k``).  All such lines are skipped
+    before numerical parsing begins.
+    """
+    # Read the raw file, skipping '#' comment lines and the first non-comment
+    # line (the column-name header), then parse remaining lines as floats.
+    rows: list[list[float]] = []
+    header_skipped = False
+    with path.open() as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line or line.startswith("#"):
+                continue
+            if not header_skipped:
+                # First non-comment, non-empty line is the column header
+                header_skipped = True
+                continue
+            rows.append([float(v) for v in line.split(",")])
+    data = np.array(rows, dtype=float)
     if data.ndim == 1:
         data = data[np.newaxis, :]
     wl = data[:, 0]
