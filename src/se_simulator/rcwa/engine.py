@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import logging
 import time
+import warnings
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 
-from se_simulator.config.schemas import SampleConfig, SimConditions
+from se_simulator.config.schemas import SampleConfig, SimConditions, Stack
 from se_simulator.materials.database import MaterialDatabase
 from se_simulator.rcwa.modes import (
     free_space_matrices,
@@ -26,6 +27,20 @@ from se_simulator.rcwa.smatrix import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_sample(sample: Stack | SampleConfig) -> SampleConfig:
+    """Normalize a Stack or SampleConfig to SampleConfig for internal use.
+
+    When a Stack is passed, converts internally without emitting a
+    DeprecationWarning (the warning is only for external callers of
+    Stack.to_sample_config()).
+    """
+    if isinstance(sample, Stack):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            return sample.to_sample_config()
+    return sample
 
 
 def _resolve_sample_materials(sample: SampleConfig, materials_db: MaterialDatabase) -> None:
@@ -122,12 +137,15 @@ class RCWAEngine:
 
     def run(
         self,
-        sample: SampleConfig,
+        sample: Stack | SampleConfig,
         sim: SimConditions,
         wavelengths_nm: np.ndarray | None = None,
         progress_callback: Callable[[float], None] | None = None,
     ) -> RCWAResult:
         """Run the full simulation across all wavelengths.
+
+        Accepts either a :class:`Stack` (preferred) or a :class:`SampleConfig`
+        (accepted for backward compatibility).
 
         Automatically selects TMM for uniform stacks and RCWA for periodic
         structures, unless overridden by ``sim.engine_override``.
@@ -135,6 +153,8 @@ class RCWAEngine:
         from se_simulator.config.manager import ConfigManager
         from se_simulator.rcwa.dispatcher import select_engine
         from se_simulator.rcwa.tmm import compute_tmm
+
+        sample = _normalize_sample(sample)
 
         if wavelengths_nm is None:
             wavelengths_nm = ConfigManager().get_wavelengths(sim.wavelengths)
@@ -233,7 +253,7 @@ class RCWAEngine:
 
     def _run_tmm(
         self,
-        sample: SampleConfig,
+        sample: Stack | SampleConfig,
         sim: SimConditions,
         wavelengths_nm: np.ndarray,
         progress_callback: Callable[[float], None] | None,
@@ -266,18 +286,22 @@ class RCWAEngine:
 
     def run_single(
         self,
-        sample: SampleConfig,
+        sample: Stack | SampleConfig,
         sim: SimConditions,
         wavelength_nm: float,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """Run RCWA for a single wavelength. Returns (jones_r, jones_t) each (2,2)."""
+        """Run RCWA for a single wavelength. Returns (jones_r, jones_t) each (2,2).
+
+        Accepts either a :class:`Stack` (preferred) or a :class:`SampleConfig`.
+        """
+        sample = _normalize_sample(sample)
         _resolve_sample_materials(sample, self.materials_db)
         jr, jt, _rt, _tt = _compute_single(sample, sim, self.materials_db, wavelength_nm)
         return jr, jt
 
     def convergence_test(
         self,
-        sample: SampleConfig,
+        sample: Stack | SampleConfig,
         sim: SimConditions,
         wavelength_nm: float,
         n_range: range = range(1, 10),
@@ -307,10 +331,14 @@ class RCWAEngine:
             "delta": np.array(deltas),
         }
 
-    def estimate_time(self, sample: SampleConfig, sim: SimConditions) -> float:
-        """Estimate total simulation time in seconds based on a single-wavelength timing."""
+    def estimate_time(self, sample: Stack | SampleConfig, sim: SimConditions) -> float:
+        """Estimate total simulation time in seconds based on a single-wavelength timing.
+
+        Accepts either a :class:`Stack` (preferred) or a :class:`SampleConfig`.
+        """
         from se_simulator.config.manager import ConfigManager
 
+        sample = _normalize_sample(sample)
         if self._per_wavelength_time is None:
             wls = ConfigManager().get_wavelengths(sim.wavelengths)
             first_wl = float(wls[0])

@@ -64,7 +64,13 @@ class GratingLayer(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SampleConfig(BaseModel):
-    """Full sample (layer stack + materials) configuration."""
+    """Internal engine representation of a sample stack.
+
+    .. deprecated::
+        Use :class:`Stack` instead. ``SampleConfig`` is an internal type
+        and will be removed from the public API in a future release.
+        Pass ``Stack`` objects directly to ``RCWAEngine.run()`` and ``compute_tmm()``.
+    """
 
     schema_version: str = "1.0"
     sample_id: str = "unnamed"
@@ -227,7 +233,21 @@ class Stack(BaseModel):
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def to_sample_config(self) -> SampleConfig:
-        """Convert to SampleConfig for consumption by the RCWA engine."""
+        """Convert to SampleConfig for consumption by the RCWA engine.
+
+        .. deprecated::
+            Pass ``Stack`` directly to ``RCWAEngine.run()`` or ``compute_tmm()``.
+            ``SampleConfig`` will be removed from the public API in a future release.
+        """
+        import warnings
+
+        warnings.warn(
+            "Stack.to_sample_config() is deprecated. Pass Stack directly to "
+            "RCWAEngine.run() or compute_tmm(). SampleConfig will be removed "
+            "from the public API in a future release.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
 
         def _mat_key(mat: MaterialSpec) -> str:
             return mat.library_name if mat.library_name is not None else mat.name

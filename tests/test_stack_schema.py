@@ -207,7 +207,10 @@ def test_stack_to_sample_config_engine_runnable() -> None:
         substrate=_si(),
         layers=[_sio2_layer(100.0)],
     )
-    sample = stack.to_sample_config()
+    import warnings
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        sample = stack.to_sample_config()
 
     # Confirm it is a valid SampleConfig
     assert isinstance(sample, SampleConfig)
@@ -229,3 +232,93 @@ def test_stack_to_sample_config_engine_runnable() -> None:
 
     result = RCWAEngine(db).run(sample, sim)
     assert result.jones_reflection.shape == (1, 2, 2)
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: deprecation warning and Stack-as-first-class-API tests
+# ---------------------------------------------------------------------------
+
+
+def test_to_sample_config_raises_deprecation_warning() -> None:
+    """Stack.to_sample_config() must emit a DeprecationWarning."""
+    import warnings
+
+    stack = _basic_stack()
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        stack.to_sample_config()
+
+    deprecation_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(deprecation_warnings) == 1, (
+        f"Expected exactly 1 DeprecationWarning, got {len(deprecation_warnings)}"
+    )
+    assert "to_sample_config" in str(deprecation_warnings[0].message).lower() or \
+           "deprecated" in str(deprecation_warnings[0].message).lower()
+
+
+def test_engine_accepts_stack_directly() -> None:
+    """RCWAEngine.run() accepts a Stack without requiring the caller to call to_sample_config()."""
+    from se_simulator.config.schemas import SimConditions, WavelengthSpec
+    from se_simulator.materials.database import MaterialDatabase
+    from se_simulator.rcwa.engine import RCWAEngine
+
+    stack = Stack(
+        superstrate=_air(),
+        substrate=_si(),
+        layers=[_sio2_layer(100.0)],
+    )
+
+    db = MaterialDatabase()
+    for spec in (stack.superstrate, stack.substrate, stack.layers[0].material):
+        db.resolve(spec)
+
+    sim = SimConditions(
+        aoi_deg=65.0,
+        azimuth_deg=0.0,
+        wavelengths=WavelengthSpec(explicit=[633.0]),
+        n_harmonics_x=1,
+        n_harmonics_y=1,
+    )
+
+    # This must not emit a DeprecationWarning (engine normalizes internally)
+    import warnings
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        result = RCWAEngine(db).run(stack, sim)
+
+    assert result.jones_reflection.shape == (1, 2, 2)
+    dep_warnings = [w for w in caught if issubclass(w.category, DeprecationWarning)]
+    assert len(dep_warnings) == 0, (
+        f"RCWAEngine.run(stack) should not emit DeprecationWarning; got: {dep_warnings}"
+    )
+
+
+def test_decompose_returns_stack() -> None:
+    """RecipeManager.decompose_simulation() returns a Stack, not a SampleConfig."""
+    from se_simulator.config.recipe import (
+        RecipeMetadata,
+        SimulationConditionsEmbed,
+        SimulationRecipe,
+        StackRef,
+    )
+    from se_simulator.recipe.manager import RecipeManager
+
+    stack = _basic_stack()
+    stack_ref = StackRef(inline=stack)
+    sim_cond = SimulationConditionsEmbed(
+        wavelength_start_nm=300.0,
+        wavelength_end_nm=800.0,
+        wavelength_step_nm=10.0,
+        aoi_degrees=65.0,
+    )
+    recipe = SimulationRecipe(
+        metadata=RecipeMetadata(recipe_type="simulation"),
+        stack=stack_ref,
+        simulation_conditions=sim_cond,
+    )
+
+    sample_out, _ = RecipeManager().decompose_simulation(recipe)
+
+    assert isinstance(sample_out, Stack), (
+        f"decompose_simulation should return Stack, got {type(sample_out)}"
+    )

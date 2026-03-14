@@ -277,33 +277,37 @@ class RecipeManager:
 
     def decompose_simulation(
         self, recipe: SimulationRecipe, recipe_path: Path | None = None
-    ) -> tuple[SampleConfig, SimConditions]:
-        """Convert a SimulationRecipe into (SampleConfig, SimConditions).
+    ) -> tuple[Stack, SimConditions]:
+        """Convert a SimulationRecipe into (Stack, SimConditions).
 
         Uses ``recipe.stack`` (the new StackRef).  If the recipe was loaded
         from a legacy YAML with a ``sample:`` key, the model_validator in
         ``SimulationRecipe`` will have already migrated it to ``recipe.stack``.
+
+        Returns a :class:`Stack` object.  Pass it directly to
+        ``RCWAEngine.run()`` which accepts ``Stack`` natively.
         """
         stack = _resolve_stack_ref(recipe.stack, recipe_path)  # type: ignore[arg-type]
-        sample_config = stack.to_sample_config()
         sim_conditions = _embed_to_sim_conditions(recipe.simulation_conditions.model_dump())
-        return sample_config, sim_conditions
+        return stack, sim_conditions
 
     def decompose_measurement(
         self, recipe: MeasurementRecipe, recipe_path: Path | None = None
-    ) -> tuple[SampleConfig, SimConditions, SystemConfig, Any, Any]:
+    ) -> tuple[Stack, SimConditions, SystemConfig, Any, Any]:
         """Convert a MeasurementRecipe into its five sub-objects.
 
         Returns
         -------
-        (SampleConfig, SimConditions, SystemConfig,
+        (Stack, SimConditions, SystemConfig,
          list[FloatingParameter], FittingConfiguration)
+
+        The first element is now a :class:`Stack` object.  Pass it directly to
+        ``RCWAEngine.run()`` or ``TmmDirectFitter`` which accept ``Stack`` natively.
         """
         fm = recipe.forward_model
 
         # --- sample (via stack) ---
         stack = _resolve_stack_ref(fm.stack, recipe_path)  # type: ignore[arg-type]
-        sample_config = stack.to_sample_config()
 
         # --- simulation conditions ---
         sim_conditions = _embed_to_sim_conditions(fm.simulation_conditions.model_dump())
@@ -325,7 +329,7 @@ class RecipeManager:
             system_config = _default_system_config(recipe)
 
         return (
-            sample_config,
+            stack,
             sim_conditions,
             system_config,
             recipe.floating_parameters,

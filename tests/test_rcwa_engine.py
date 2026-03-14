@@ -12,6 +12,8 @@ from se_simulator.config.schemas import (
     ShapeGeometry,
     ShapeRegion,
     SimConditions,
+    Stack,
+    StackLayer,
     WavelengthSpec,
 )
 from se_simulator.materials.database import MaterialDatabase
@@ -313,3 +315,68 @@ def test_parallel_matches_serial():
 
     max_diff = np.max(np.abs(result_serial.jones_reflection - result_parallel.jones_reflection))
     assert max_diff < 1e-8, f"Max diff between parallel and serial: {max_diff:.2e}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Stack-as-first-class-API tests
+# ---------------------------------------------------------------------------
+
+
+def _make_sio2_stack() -> Stack:
+    """Minimal Stack: Air | 100 nm SiO2 | Air."""
+    air = MaterialSpec(name="Air", source="constant_nk", n=1.0, k=0.0)
+    sio2 = MaterialSpec(name="SiO2", source="library", library_name="SiO2")
+    layer = StackLayer(
+        name="sio2_layer",
+        type="uniform",
+        thickness_nm=100.0,
+        material=sio2,
+    )
+    return Stack(superstrate=air, substrate=air, layers=[layer])
+
+
+def test_engine_accepts_stack():
+    """RCWAEngine.run() accepts a Stack directly without SampleConfig conversion by caller."""
+    stack = _make_sio2_stack()
+    db = _make_db(_air_spec(), _sio2_spec())
+    sim = _sim(aoi_deg=45.0, wavelengths=[633.0], n=3)
+
+    result = RCWAEngine(db).run(stack, sim)
+
+    assert result.jones_reflection.shape == (1, 2, 2)
+    assert result.energy_conservation[0] > 0.998
+
+
+def test_engine_run_single_accepts_stack():
+    """RCWAEngine.run_single() accepts a Stack directly."""
+    stack = _make_sio2_stack()
+    db = _make_db(_air_spec(), _sio2_spec())
+    sim = _sim(aoi_deg=45.0, wavelengths=[633.0], n=3)
+
+    jr, jt = RCWAEngine(db).run_single(stack, sim, 633.0)
+
+    assert jr.shape == (2, 2)
+    assert not np.any(np.isnan(jr))
+
+
+def test_engine_stack_and_sampleconfig_match():
+    """Stack and equivalent SampleConfig produce identical jones_reflection."""
+    stack = _make_sio2_stack()
+    # Equivalent SampleConfig (backward-compat path)
+    sample_config = SampleConfig(
+        Lx_nm=500.0, Ly_nm=500.0,
+        superstrate_material="Air",
+        substrate_material="Air",
+        layers=[_uniform_sio2_layer(100.0)],
+        materials={"Air": _air_spec(), "SiO2": _sio2_spec()},
+    )
+
+    db1 = _make_db(_air_spec(), _sio2_spec())
+    db2 = _make_db(_air_spec(), _sio2_spec())
+    sim = _sim(aoi_deg=45.0, wavelengths=[500.0, 633.0, 700.0], n=3)
+
+    result_stack = RCWAEngine(db1).run(stack, sim)
+    result_cfg = RCWAEngine(db2).run(sample_config, sim)
+
+    max_diff = np.max(np.abs(result_stack.jones_reflection - result_cfg.jones_reflection))
+    assert max_diff < 1e-10, f"Stack vs SampleConfig max diff: {max_diff:.2e}"

@@ -146,9 +146,20 @@ class TmmDirectFitter:
         ]
 
         # Determine the base SampleConfig for material pre-loading
+        import warnings
+
         base_sample: SampleConfig
         if self._stack is not None:
-            base_sample = self._stack.to_sample_config()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                base_sample = self._stack.to_sample_config()
+        elif isinstance(self.sample_config, Stack):
+            # Defensive: caller passed a Stack as sample_config — normalise it.
+            self._stack = self.sample_config  # type: ignore[assignment]
+            self.sample_config = None
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                base_sample = self._stack.to_sample_config()
         else:
             base_sample = self.sample_config  # type: ignore[assignment]
 
@@ -235,13 +246,17 @@ class TmmDirectFitter:
         from se_simulator.ellipsometer.prcsa import compute_psi_delta
         from se_simulator.rcwa.tmm import compute_tmm
 
+        import warnings
+
         if self._stack is not None:
             # New Stack-based path
             stack_dict = self._stack.model_dump()
             for i, path in enumerate(self._local_paths):
                 resolve_set(stack_dict, path, float(x[i]))
             stack_mod = Stack.model_validate(stack_dict)
-            sample_mod = stack_mod.to_sample_config()
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                sample_mod = stack_mod.to_sample_config()
         else:
             # Legacy SampleConfig-based path
             sample_dict = self.sample_config.model_dump()  # type: ignore[union-attr]

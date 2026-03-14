@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 if TYPE_CHECKING:
-    from se_simulator.config.schemas import GratingLayer, SampleConfig
+    from se_simulator.config.schemas import GratingLayer, SampleConfig, Stack
     from se_simulator.materials.database import MaterialDatabase
 
 logger = logging.getLogger(__name__)
@@ -164,13 +164,16 @@ def _intensity_rt(
 
 
 def compute_tmm(
-    sample: SampleConfig,
+    sample: Stack | SampleConfig,
     materials_db: MaterialDatabase,
     wavelengths_nm: np.ndarray,
     aoi_degrees: float,
     azimuth_degrees: float = 0.0,  # noqa: ARG001 — reserved for future anisotropic support
 ) -> tuple[np.ndarray, np.ndarray]:
     """Compute reflection Jones matrix via TMM.
+
+    Accepts either a :class:`Stack` (preferred) or a :class:`SampleConfig`
+    (accepted for backward compatibility).
 
     Returns
     -------
@@ -181,6 +184,12 @@ def compute_tmm(
         jones_r[i, 1, 1] = rpp,  jones_r[i, 0, 0] = rss
         cross-pol terms are zero for isotropic media
     """
+    from se_simulator.config.schemas import Stack
+
+    if isinstance(sample, Stack):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            sample = sample.to_sample_config()
     n_wl = len(wavelengths_nm)
     aoi_rad = np.radians(aoi_degrees)
     cos_theta0 = np.full(n_wl, np.cos(aoi_rad), dtype=complex)

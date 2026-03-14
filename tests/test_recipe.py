@@ -30,7 +30,7 @@ from se_simulator.config.recipe import (
     SimulationRecipe,
     SimulationRecipeOutputOptions,
 )
-from se_simulator.config.schemas import SampleConfig, SimConditions, SystemConfig
+from se_simulator.config.schemas import SampleConfig, SimConditions, Stack, SystemConfig
 from se_simulator.recipe.dotpath import resolve_get, resolve_set
 from se_simulator.recipe.manager import RecipeManager, RecipeValidationError
 
@@ -255,11 +255,13 @@ def test_decompose_simulation(manager: RecipeManager) -> None:
     recipe = _make_sim_recipe()
     sample, sim_cond = manager.decompose_simulation(recipe)
 
-    assert isinstance(sample, SampleConfig)
+    # decompose_simulation now returns Stack (preferred API)
+    assert isinstance(sample, Stack)
     assert isinstance(sim_cond, SimConditions)
 
-    assert sample.superstrate_material == "Air"
-    assert sample.substrate_material == "Si"
+    # Stack fields: superstrate/substrate are MaterialSpec objects
+    assert sample.superstrate.library_name == "Air" or sample.superstrate.name == "Air"
+    assert sample.substrate.library_name == "Si" or sample.substrate.name == "Si"
     assert sim_cond.aoi_deg == pytest.approx(65.0)
     assert sim_cond.wavelengths.range is not None
     assert sim_cond.wavelengths.range[0] == pytest.approx(300.0)
@@ -273,7 +275,8 @@ def test_decompose_measurement(manager: RecipeManager) -> None:
     recipe = _make_meas_recipe()
     sample, sim_cond, sys_cfg, floats, fit_cfg = manager.decompose_measurement(recipe)
 
-    assert isinstance(sample, SampleConfig)
+    # decompose_measurement now returns Stack (preferred API)
+    assert isinstance(sample, Stack)
     assert isinstance(sim_cond, SimConditions)
     assert isinstance(sys_cfg, SystemConfig)
     assert len(floats) == 1

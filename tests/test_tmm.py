@@ -14,6 +14,8 @@ from se_simulator.config.schemas import (
     ShapeGeometry,
     ShapeRegion,
     SimConditions,
+    Stack,
+    StackLayer,
     WavelengthSpec,
 )
 from se_simulator.materials.database import MaterialDatabase
@@ -407,3 +409,70 @@ def test_bare_substrate_no_oscillation():
     # Count oscillations — smooth curve should have very few sign changes in derivative
     sign_changes = np.sum(np.diff(psi)[:-1] * np.diff(psi)[1:] < 0)
     assert sign_changes <= 5, f"Too many Psi oscillations: {sign_changes}"
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Stack as direct input to compute_tmm
+# ---------------------------------------------------------------------------
+
+
+def test_tmm_accepts_stack(air_spec, sio2_spec, si_spec, wavelengths_100):
+    """compute_tmm() accepts a Stack directly — no SampleConfig needed by caller."""
+    from se_simulator.rcwa.tmm import compute_tmm
+
+    sio2_layer = StackLayer(
+        name="SiO2",
+        type="uniform",
+        thickness_nm=100.0,
+        material=sio2_spec,
+        Lx_nm=1000.0,
+        Ly_nm=1000.0,
+    )
+    stack = Stack(superstrate=air_spec, substrate=si_spec, layers=[sio2_layer])
+
+    db = MaterialDatabase()
+    for spec in (air_spec, sio2_spec, si_spec):
+        db.resolve(spec)
+
+    jones_r, jones_t = compute_tmm(stack, db, wavelengths_100, 65.0)
+
+    assert jones_r.shape == (len(wavelengths_100), 2, 2)
+    assert not np.any(np.isnan(jones_r))
+    assert not np.any(np.isinf(jones_r))
+
+
+def test_tmm_stack_matches_sampleconfig(air_spec, sio2_spec, si_spec, wavelengths_100):
+    """compute_tmm with Stack produces identical results to compute_tmm with SampleConfig."""
+    from se_simulator.rcwa.tmm import compute_tmm
+
+    sio2_layer_stack = StackLayer(
+        name="SiO2",
+        type="uniform",
+        thickness_nm=100.0,
+        material=sio2_spec,
+        Lx_nm=1000.0,
+        Ly_nm=1000.0,
+    )
+    stack = Stack(superstrate=air_spec, substrate=si_spec, layers=[sio2_layer_stack])
+
+    sampleconfig = _make_uniform_sample(
+        materials={"Air": air_spec, "SiO2": sio2_spec, "Si": si_spec},
+        layers=[
+            GratingLayer(
+                name="SiO2", type="uniform", thickness_nm=100.0,
+                Lx_nm=1000.0, Ly_nm=1000.0, background_material="SiO2",
+            )
+        ],
+    )
+
+    db1 = MaterialDatabase()
+    db2 = MaterialDatabase()
+    for spec in (air_spec, sio2_spec, si_spec):
+        db1.resolve(spec)
+        db2.resolve(spec)
+
+    jr_stack, _ = compute_tmm(stack, db1, wavelengths_100, 65.0)
+    jr_cfg, _ = compute_tmm(sampleconfig, db2, wavelengths_100, 65.0)
+
+    max_diff = np.max(np.abs(jr_stack - jr_cfg))
+    assert max_diff < 1e-12, f"Stack vs SampleConfig max diff: {max_diff:.2e}"

@@ -2,7 +2,7 @@
 
 Orchestrates the full fitting workflow from a ``MeasurementRecipe``:
 
-1. Decompose recipe into (SampleConfig, SimConditions, SystemConfig,
+1. Decompose recipe into (Stack, SimConditions, SystemConfig,
    floating_params, fitting_config) via ``RecipeManager``.
 2. Select fitting mode via ``select_fitting_mode``.
 3. Dispatch to either ``TmmDirectFitter`` (all-uniform stacks, no library)
@@ -60,17 +60,17 @@ def run_fitting(
     manager = RecipeManager()
     rpath = Path(recipe_path) if recipe_path else None
 
-    sample_config, sim_conditions, system_config, floating_params, fitting_config = (
+    stack, sim_conditions, system_config, floating_params, fitting_config = (
         manager.decompose_measurement(recipe, rpath)
     )
 
-    mode = select_fitting_mode(recipe, sample_config)
+    mode = select_fitting_mode(recipe, stack)
     logger.info("[Pipeline] Fitting mode selected: %s", mode)
 
     if mode == "tmm_direct":
         fit_results = _run_tmm_direct(
             recipe,
-            sample_config,
+            stack,
             sim_conditions,
             system_config,
             floating_params,
@@ -81,7 +81,7 @@ def run_fitting(
     else:
         fit_results = _run_library(
             recipe,
-            sample_config,
+            stack,
             sim_conditions,
             system_config,
             floating_params,
@@ -112,7 +112,7 @@ def run_fitting(
 
 def _run_tmm_direct(
     recipe: MeasurementRecipe,
-    sample_config,
+    stack,
     sim_conditions,
     system_config,
     floating_params,
@@ -120,15 +120,20 @@ def _run_tmm_direct(
     target_spectrum: np.ndarray,
     progress_callback: Callable[[int, float], None] | None,
 ) -> FitResults:
+    from se_simulator.config.schemas import Stack
     from se_simulator.fitting.tmm_direct_fitter import TmmDirectFitter
 
-    # Prefer the inline Stack from the forward model when available
+    # stack is already a Stack (from decompose_measurement); fall back to
+    # inline Stack from forward model if the recipe has one with more precision.
     fm = recipe.forward_model
-    stack = fm.stack.inline if (fm.stack is not None and fm.stack.inline is not None) else None
+    inline_stack = fm.stack.inline if (fm.stack is not None and fm.stack.inline is not None) else None
+    effective_stack = inline_stack if isinstance(inline_stack, Stack) else (
+        stack if isinstance(stack, Stack) else None
+    )
 
     fitter = TmmDirectFitter(
-        stack=stack,
-        sample_config=sample_config if stack is None else None,
+        stack=effective_stack,
+        sample_config=None if effective_stack is not None else None,
         sim_conditions=sim_conditions,
         system_config=system_config,
         floating_params=floating_params,
@@ -146,7 +151,7 @@ def _run_tmm_direct(
 
 def _run_library(
     recipe: MeasurementRecipe,
-    sample_config,
+    stack,
     sim_conditions,
     system_config,
     floating_params,
@@ -159,9 +164,11 @@ def _run_library(
     This path requires a pre-built HDF5 library.  If no library is
     available, a ``FileNotFoundError`` is raised.
     """
+    import warnings
     from datetime import UTC, datetime
 
     from se_simulator.config.recipe import FitResults
+    from se_simulator.config.schemas import Stack
     from se_simulator.fitting.engine import FittingEngine
     from se_simulator.materials.database import MaterialDatabase
     from se_simulator.rcwa.engine import RCWAEngine
@@ -171,6 +178,14 @@ def _run_library(
         raise FileNotFoundError(
             "Fitting mode is 'library' but no library_file is specified in the recipe."
         )
+
+    # Convert Stack to SampleConfig to access materials dict for pre-loading
+    if isinstance(stack, Stack):
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            sample_config = stack.to_sample_config()
+    else:
+        sample_config = stack
 
     db = MaterialDatabase()
     for spec in sample_config.materials.values():

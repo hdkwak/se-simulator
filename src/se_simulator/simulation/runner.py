@@ -1,6 +1,6 @@
 """Simulation runner: thin facade over RCWAEngine.
 
-Accepts either a ``SimulationRecipe`` or raw ``SampleConfig`` +
+Accepts either a ``SimulationRecipe`` or raw ``Stack`` / ``SampleConfig`` +
 ``SimConditions`` objects and returns an ``RCWAResult``.
 """
 from __future__ import annotations
@@ -13,7 +13,7 @@ import numpy as np
 
 if TYPE_CHECKING:
     from se_simulator.config.recipe import SimulationRecipe
-    from se_simulator.config.schemas import SampleConfig, SimConditions
+    from se_simulator.config.schemas import SampleConfig, SimConditions, Stack
     from se_simulator.rcwa.results import RCWAResult
 
 logger = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 
 def run_simulation(
     recipe: SimulationRecipe | None = None,
-    sample_config: SampleConfig | None = None,
+    sample_config: Stack | SampleConfig | None = None,
     sim_conditions: SimConditions | None = None,
     recipe_path: str = "",
     wavelengths_nm: np.ndarray | None = None,
@@ -40,7 +40,9 @@ def run_simulation(
         Optional ``SimulationRecipe``; when provided, ``sample_config`` and
         ``sim_conditions`` are derived from it via ``RecipeManager``.
     sample_config:
-        ``SampleConfig`` used when *recipe* is ``None``.
+        ``Stack`` (preferred) or ``SampleConfig`` used when *recipe* is ``None``.
+        Passing a ``Stack`` is the preferred API; ``SampleConfig`` is accepted
+        for backward compatibility.
     sim_conditions:
         ``SimConditions`` used when *recipe* is ``None``.
     recipe_path:
@@ -72,6 +74,7 @@ def run_simulation(
 
         rpath = Path(recipe_path) if recipe_path else None
         mgr = RecipeManager()
+        # decompose_simulation now returns (Stack, SimConditions)
         sample_config, sim_conditions = mgr.decompose_simulation(recipe, rpath)
         logger.info("[Runner] Decomposed SimulationRecipe.")
     elif sample_config is None or sim_conditions is None:
@@ -79,9 +82,15 @@ def run_simulation(
             "Provide either a SimulationRecipe or both sample_config and sim_conditions."
         )
 
+    # RCWAEngine.run() accepts Stack or SampleConfig directly — no conversion needed.
+    # Pre-load materials from SampleConfig when a SampleConfig is provided directly.
     db = MaterialDatabase()
-    for spec in sample_config.materials.values():
-        db.resolve(spec)
+    from se_simulator.config.schemas import Stack
+
+    if not isinstance(sample_config, Stack):
+        # Legacy SampleConfig path: pre-load materials from the materials dict.
+        for spec in sample_config.materials.values():  # type: ignore[union-attr]
+            db.resolve(spec)
 
     engine = RCWAEngine(db)
     result = engine.run(
