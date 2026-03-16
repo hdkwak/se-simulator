@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from se_simulator.config.schemas import CompensatorRetardanceModel, DataCollectionConfig, SystemConfig
+from se_simulator.config.schemas import DataCollectionConfig, SystemConfig
 from se_simulator.ellipsometer.jones import rotation_matrix, wave_plate
 
 if TYPE_CHECKING:
@@ -34,12 +34,7 @@ def apply_calibration_errors(
     delta_c = ce.delta_C_deg
 
     # Evaluate retardance error at this wavelength
-    delta_ret = 0.0
-    if ce.delta_retardance_model is not None:
-        from se_simulator.ellipsometer.prcsa import resolve_retardance
-
-        tmp = system.model_copy(update={"compensator_retardance": ce.delta_retardance_model})
-        delta_ret = float(resolve_retardance(tmp, np.array([wavelength_nm]))[0])
+    delta_ret = float(ce.delta_retardance_deg)
 
     # Early exit — identity transform
     if delta_p == 0.0 and delta_a == 0.0 and delta_c == 0.0 and delta_ret == 0.0:
@@ -90,16 +85,7 @@ def compute_sensitivity(
         elif parameter == "delta_C":
             new_ce = ce.model_copy(update={"delta_C_deg": ce.delta_C_deg + offset})
         else:  # delta_retardance
-            cur = 0.0
-            if ce.delta_retardance_model is not None:
-                from se_simulator.ellipsometer.prcsa import resolve_retardance
-
-                tmp = system.model_copy(
-                    update={"compensator_retardance": ce.delta_retardance_model}
-                )
-                cur = float(resolve_retardance(tmp, np.array([wavelength_nm]))[0])
-            new_model = CompensatorRetardanceModel(type="constant", value=cur + offset)
-            new_ce = ce.model_copy(update={"delta_retardance_model": new_model})
+            new_ce = ce.model_copy(update={"delta_retardance_deg": ce.delta_retardance_deg + offset})
 
         new_system = system.model_copy(update={"calibration_errors": new_ce})
         j_eff = apply_calibration_errors(jones_r, new_system, wavelength_nm)

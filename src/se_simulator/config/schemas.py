@@ -186,6 +186,7 @@ class FittingConditions(BaseModel):
     refinement_algo: str = "Nelder-Mead"
     max_iterations: int = 200
     convergence_tol: float = 1e-5
+    wavelength_mask: tuple[float, float] | None = None
 
 
 # ---------------------------------------------------------------------------

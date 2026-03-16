@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QComboBox,
     QDoubleSpinBox,
     QFormLayout,
     QGroupBox,
@@ -14,7 +15,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from se_simulator.config.schemas import SystemConfig
+from se_simulator.config.schemas import InstrumentGeometry, SystemConfig
 
 
 class SystemConfigEditor(QWidget):
@@ -42,32 +43,13 @@ class SystemConfigEditor(QWidget):
         ident_form = QFormLayout(ident_group)
         self._name_edit = QLineEdit()
         self._serial_edit = QLineEdit()
+        self._geometry_combo = QComboBox()
+        for geom in InstrumentGeometry:
+            self._geometry_combo.addItem(geom.value, geom)
         ident_form.addRow("Instrument Name:", self._name_edit)
         ident_form.addRow("Serial Number:", self._serial_edit)
+        ident_form.addRow("Geometry:", self._geometry_combo)
         layout.addWidget(ident_group)
-
-        # Optical angles
-        angle_group = QGroupBox("Optical Angles")
-        angle_form = QFormLayout(angle_group)
-        self._polarizer_spin = QDoubleSpinBox()
-        self._polarizer_spin.setRange(-360.0, 360.0)
-        self._polarizer_spin.setDecimals(2)
-        self._polarizer_spin.setSuffix(" °")
-
-        self._analyzer_spin = QDoubleSpinBox()
-        self._analyzer_spin.setRange(-360.0, 360.0)
-        self._analyzer_spin.setDecimals(2)
-        self._analyzer_spin.setSuffix(" °")
-
-        self._compensator_spin = QDoubleSpinBox()
-        self._compensator_spin.setRange(-360.0, 360.0)
-        self._compensator_spin.setDecimals(2)
-        self._compensator_spin.setSuffix(" °")
-
-        angle_form.addRow("Polarizer P:", self._polarizer_spin)
-        angle_form.addRow("Analyzer A:", self._analyzer_spin)
-        angle_form.addRow("Compensator C:", self._compensator_spin)
-        layout.addWidget(angle_group)
 
         # Compensator retardance
         ret_group = QGroupBox("Compensator Retardance")
@@ -104,9 +86,10 @@ class SystemConfigEditor(QWidget):
         self._config = config
         self._name_edit.setText(config.instrument_name)
         self._serial_edit.setText(config.serial_number)
-        self._polarizer_spin.setValue(config.polarizer_angle_deg)
-        self._analyzer_spin.setValue(config.analyzer_angle_deg)
-        self._compensator_spin.setValue(config.compensator_angle_deg)
+        # Set geometry combo to match the config value
+        idx = self._geometry_combo.findData(config.geometry)
+        if idx >= 0:
+            self._geometry_combo.setCurrentIndex(idx)
         if config.compensator_retardance.type == "constant":
             val = config.compensator_retardance.value
             self._retardance_spin.setValue(val if val is not None else 90.0)
@@ -123,13 +106,12 @@ class SystemConfigEditor(QWidget):
             type="constant",
             value=self._retardance_spin.value(),
         )
+        geometry: InstrumentGeometry = self._geometry_combo.currentData()
         return self._config.model_copy(
             update={
                 "instrument_name": self._name_edit.text().strip(),
                 "serial_number": self._serial_edit.text().strip(),
-                "polarizer_angle_deg": self._polarizer_spin.value(),
-                "analyzer_angle_deg": self._analyzer_spin.value(),
-                "compensator_angle_deg": self._compensator_spin.value(),
+                "geometry": geometry,
                 "compensator_retardance": retardance,
                 "n_revolutions": self._n_rev_spin.value(),
                 "n_points_per_revolution": self._n_pts_spin.value(),

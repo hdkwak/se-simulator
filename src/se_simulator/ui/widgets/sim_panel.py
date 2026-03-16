@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from se_simulator.config.schemas import SimConditions
+from se_simulator.config.schemas import DataCollectionConfig, SimConditions
 
 try:
     from se_simulator.rcwa.dispatcher import select_engine as _select_engine
@@ -108,78 +108,91 @@ class SimulationPanel(QWidget):
         run_layout.addWidget(self._btn_stop)
         layout.addWidget(run_group)
 
-        # Simulation conditions
-        cond_group = QGroupBox("Simulation Conditions")
-        form = QFormLayout(cond_group)
+        # ── Measurement Geometry (maps to DataCollectionConfig) ──────────────
+        meas_group = QGroupBox("Measurement Geometry")
+        meas_form = QFormLayout(meas_group)
 
         self._aoi_spin = QDoubleSpinBox()
         self._aoi_spin.setRange(0.0, 89.9)
         self._aoi_spin.setDecimals(2)
         self._aoi_spin.setSuffix(" °")
         self._aoi_spin.setValue(65.0)
-        form.addRow("Angle of Incidence:", self._aoi_spin)
+        meas_form.addRow("Angle of Incidence:", self._aoi_spin)
 
         self._az_spin = QDoubleSpinBox()
         self._az_spin.setRange(0.0, 360.0)
         self._az_spin.setDecimals(2)
         self._az_spin.setSuffix(" °")
         self._az_spin.setValue(0.0)
-        form.addRow("Azimuth Angle:", self._az_spin)
+        meas_form.addRow("Azimuth Angle:", self._az_spin)
 
-        self._nx_spin = QSpinBox()
-        self._nx_spin.setRange(1, 20)
-        self._nx_spin.setValue(5)
-        form.addRow("Harmonics X:", self._nx_spin)
+        self._polarizer_spin = QDoubleSpinBox()
+        self._polarizer_spin.setRange(-360.0, 360.0)
+        self._polarizer_spin.setDecimals(2)
+        self._polarizer_spin.setSuffix(" °")
+        self._polarizer_spin.setValue(45.0)
+        meas_form.addRow("Polarizer P:", self._polarizer_spin)
 
-        self._ny_spin = QSpinBox()
-        self._ny_spin.setRange(1, 20)
-        self._ny_spin.setValue(5)
-        form.addRow("Harmonics Y:", self._ny_spin)
+        self._analyzer_spin = QDoubleSpinBox()
+        self._analyzer_spin.setRange(-360.0, 360.0)
+        self._analyzer_spin.setDecimals(2)
+        self._analyzer_spin.setSuffix(" °")
+        self._analyzer_spin.setValue(45.0)
+        meas_form.addRow("Analyzer A:", self._analyzer_spin)
 
-        layout.addWidget(cond_group)
-
-        # Wavelength range
-        wl_group = QGroupBox("Wavelength Range")
-        wl_form = QFormLayout(wl_group)
+        self._compensator_spin = QDoubleSpinBox()
+        self._compensator_spin.setRange(-360.0, 360.0)
+        self._compensator_spin.setDecimals(2)
+        self._compensator_spin.setSuffix(" °")
+        self._compensator_spin.setValue(0.0)
+        meas_form.addRow("Compensator C:", self._compensator_spin)
 
         self._wl_start = QDoubleSpinBox()
         self._wl_start.setRange(100.0, 10000.0)
         self._wl_start.setDecimals(1)
         self._wl_start.setSuffix(" nm")
         self._wl_start.setValue(300.0)
-        wl_form.addRow("Start:", self._wl_start)
+        meas_form.addRow("Wavelength Start:", self._wl_start)
 
         self._wl_stop = QDoubleSpinBox()
         self._wl_stop.setRange(100.0, 10000.0)
         self._wl_stop.setDecimals(1)
         self._wl_stop.setSuffix(" nm")
         self._wl_stop.setValue(800.0)
-        wl_form.addRow("Stop:", self._wl_stop)
+        meas_form.addRow("Wavelength Stop:", self._wl_stop)
 
         self._wl_step = QDoubleSpinBox()
         self._wl_step.setRange(0.1, 100.0)
         self._wl_step.setDecimals(1)
         self._wl_step.setSuffix(" nm")
         self._wl_step.setValue(10.0)
-        wl_form.addRow("Step:", self._wl_step)
+        meas_form.addRow("Wavelength Step:", self._wl_step)
 
-        layout.addWidget(wl_group)
+        layout.addWidget(meas_group)
 
-        # Advanced options (collapsed by default)
-        adv_group = QGroupBox("Advanced")
-        adv_group.setCheckable(True)
-        adv_group.setChecked(False)
-        adv_form = QFormLayout(adv_group)
+        # ── Computation (maps to SimulationConditionsEmbed algorithm knobs) ──
+        comp_group = QGroupBox("Computation")
+        comp_form = QFormLayout(comp_group)
 
-        self._chk_parallel = QCheckBox("Parallel wavelengths")
-        self._chk_parallel.setChecked(True)
-        adv_form.addRow(self._chk_parallel)
+        self._nx_spin = QSpinBox()
+        self._nx_spin.setRange(1, 20)
+        self._nx_spin.setValue(5)
+        comp_form.addRow("Harmonics X:", self._nx_spin)
+
+        self._ny_spin = QSpinBox()
+        self._ny_spin.setRange(1, 20)
+        self._ny_spin.setValue(5)
+        comp_form.addRow("Harmonics Y:", self._ny_spin)
 
         self._chk_li = QCheckBox("Li factorization")
         self._chk_li.setChecked(True)
-        adv_form.addRow(self._chk_li)
+        comp_form.addRow(self._chk_li)
 
-        layout.addWidget(adv_group)
+        self._chk_parallel = QCheckBox("Parallel wavelengths")
+        self._chk_parallel.setChecked(True)
+        comp_form.addRow(self._chk_parallel)
+
+        layout.addWidget(comp_group)
         layout.addStretch()
 
         # Connect signals
@@ -190,13 +203,23 @@ class SimulationPanel(QWidget):
         self._btn_save_back.clicked.connect(self._on_save_back)
 
         # Track modifications after recipe load
-        self._aoi_spin.valueChanged.connect(self._mark_modified)
-        self._az_spin.valueChanged.connect(self._mark_modified)
-        self._nx_spin.valueChanged.connect(self._mark_modified)
-        self._ny_spin.valueChanged.connect(self._mark_modified)
-        self._wl_start.valueChanged.connect(self._mark_modified)
-        self._wl_stop.valueChanged.connect(self._mark_modified)
-        self._wl_step.valueChanged.connect(self._mark_modified)
+        for widget in self._modifiable_widgets():
+            widget.valueChanged.connect(self._mark_modified)
+
+    def _modifiable_widgets(self) -> tuple:
+        """Return all value-bearing widgets whose changes mark the recipe modified."""
+        return (
+            self._aoi_spin,
+            self._az_spin,
+            self._polarizer_spin,
+            self._analyzer_spin,
+            self._compensator_spin,
+            self._nx_spin,
+            self._ny_spin,
+            self._wl_start,
+            self._wl_stop,
+            self._wl_step,
+        )
 
     # ------------------------------------------------------------------
     # Recipe support
@@ -221,6 +244,10 @@ class SimulationPanel(QWidget):
         self._set_blocking(True)
         try:
             self.load_sim(sim)
+            # Overlay measurement geometry from recipe.data_collection
+            dc = getattr(recipe, "data_collection", None)
+            if dc is not None:
+                self.load_data_collection(dc)
         finally:
             self._set_blocking(False)
 
@@ -229,15 +256,7 @@ class SimulationPanel(QWidget):
         self.recipe_loaded.emit(recipe, path)
 
     def _set_blocking(self, block: bool) -> None:
-        for widget in (
-            self._aoi_spin,
-            self._az_spin,
-            self._nx_spin,
-            self._ny_spin,
-            self._wl_start,
-            self._wl_stop,
-            self._wl_step,
-        ):
+        for widget in self._modifiable_widgets():
             widget.blockSignals(block)
 
     def _mark_modified(self) -> None:
@@ -278,7 +297,6 @@ class SimulationPanel(QWidget):
     def _on_save_back(self) -> None:
         if self._recipe is None or self._recipe_path is None:
             return
-        from se_simulator.config.schemas import DataCollectionConfig
         from se_simulator.recipe.manager import RecipeManager
 
         sim = self.build_sim()
@@ -286,7 +304,7 @@ class SimulationPanel(QWidget):
         if wl is None:
             return
 
-        # Get existing data_collection as base (for angle fields we don't control here)
+        # Get existing data_collection as base then overwrite all fields we own
         existing_dc = getattr(self._recipe, "data_collection", DataCollectionConfig())
         new_dc = existing_dc.model_copy(update={
             "wavelength_start_nm": wl[0],
@@ -294,6 +312,9 @@ class SimulationPanel(QWidget):
             "wavelength_step_nm": wl[2],
             "aoi_deg": sim.aoi_deg,
             "azimuth_deg": sim.azimuth_deg,
+            "polarizer_angle_deg": self._polarizer_spin.value(),
+            "analyzer_angle_deg": self._analyzer_spin.value(),
+            "compensator_angle_deg": self._compensator_spin.value(),
         })
 
         recipe = self._recipe
@@ -312,7 +333,35 @@ class SimulationPanel(QWidget):
         self._recipe_path_edit.setText(str(self._recipe_path))
 
     # ------------------------------------------------------------------
-    # Existing API
+    # DataCollectionConfig API
+    # ------------------------------------------------------------------
+
+    def load_data_collection(self, dc: DataCollectionConfig) -> None:
+        """Populate the Measurement Geometry group from a DataCollectionConfig."""
+        self._aoi_spin.setValue(dc.aoi_deg)
+        self._az_spin.setValue(dc.azimuth_deg)
+        self._polarizer_spin.setValue(dc.polarizer_angle_deg)
+        self._analyzer_spin.setValue(dc.analyzer_angle_deg)
+        self._compensator_spin.setValue(dc.compensator_angle_deg)
+        self._wl_start.setValue(dc.wavelength_start_nm)
+        self._wl_stop.setValue(dc.wavelength_end_nm)
+        self._wl_step.setValue(dc.wavelength_step_nm)
+
+    def build_data_collection(self) -> DataCollectionConfig:
+        """Read the Measurement Geometry group into a DataCollectionConfig."""
+        return DataCollectionConfig(
+            aoi_deg=self._aoi_spin.value(),
+            azimuth_deg=self._az_spin.value(),
+            polarizer_angle_deg=self._polarizer_spin.value(),
+            analyzer_angle_deg=self._analyzer_spin.value(),
+            compensator_angle_deg=self._compensator_spin.value(),
+            wavelength_start_nm=self._wl_start.value(),
+            wavelength_end_nm=self._wl_stop.value(),
+            wavelength_step_nm=self._wl_step.value(),
+        )
+
+    # ------------------------------------------------------------------
+    # Existing API (backward compat)
     # ------------------------------------------------------------------
 
     def load_sim(self, sim: SimConditions) -> None:
