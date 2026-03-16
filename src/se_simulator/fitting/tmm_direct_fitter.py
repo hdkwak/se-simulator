@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from se_simulator.config.recipe import FitResults, FittingConfiguration, FloatingParameter
-from se_simulator.config.schemas import SampleConfig, SimConditions, Stack, SystemConfig
+from se_simulator.config.schemas import DataCollectionConfig, SampleConfig, SimConditions, Stack, SystemConfig
 from se_simulator.recipe.dotpath import resolve_set
 
 if TYPE_CHECKING:
@@ -119,6 +119,7 @@ class TmmDirectFitter:
         fitting_config: FittingConfiguration,
         stack: Stack | None = None,
         sample_config: SampleConfig | None = None,
+        data_collection: DataCollectionConfig | None = None,
         progress_callback: Callable[[int, float], None] | None = None,
     ) -> None:
         if stack is None and sample_config is None:
@@ -127,6 +128,7 @@ class TmmDirectFitter:
         self._stack = stack
         # Keep sample_config reference for legacy callers that inspect it directly
         self.sample_config = sample_config
+        self.data_collection = data_collection
         self.sim_conditions = sim_conditions
         self.system_config = system_config
         self.floating_params = floating_params

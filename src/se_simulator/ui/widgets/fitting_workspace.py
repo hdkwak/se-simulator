@@ -221,7 +221,7 @@ class FittingWorkspace(QWidget):
 
         manager = RecipeManager()
         try:
-            _sample, sim, system, floating_params, fitting_config = (
+            _sample, sim, dc, system, floating_params, fitting_config = (
                 manager.decompose_measurement(recipe, recipe_path=path)
             )
         except Exception as exc:  # noqa: BLE001
@@ -234,7 +234,7 @@ class FittingWorkspace(QWidget):
         self._btn_save_results.setEnabled(False)
 
         self._recipe_path_edit.setText(str(path))
-        self.set_configs(system, sim)
+        self.set_configs(system, sim, data_collection=dc)
 
         # Populate fitting mode
         fitting_mode = getattr(fitting_config, "fitting_mode", "auto")
@@ -395,10 +395,16 @@ class FittingWorkspace(QWidget):
     # Existing API
     # ------------------------------------------------------------------
 
-    def set_configs(self, system: SystemConfig, sim: SimConditions) -> None:
+    def set_configs(
+        self,
+        system: SystemConfig,
+        sim: SimConditions,
+        data_collection: object = None,
+    ) -> None:
         """Update the configs used for fitting."""
         self._system = system
         self._sim = sim
+        self._data_collection = data_collection
 
     def set_target(self, target: EllipsometryResult) -> None:
         """Set the target spectrum to fit against."""

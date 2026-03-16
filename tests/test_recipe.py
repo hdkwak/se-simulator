@@ -292,15 +292,17 @@ def test_decompose_simulation(manager: RecipeManager) -> None:
 
 def test_decompose_measurement(manager: RecipeManager) -> None:
     recipe = _make_meas_recipe()
-    sample, sim_cond, sys_cfg, floats, fit_cfg = manager.decompose_measurement(recipe)
+    sample, sim_cond, dc, sys_cfg, floats, fit_cfg = manager.decompose_measurement(recipe)
 
     assert isinstance(sample, Stack)
     assert isinstance(sim_cond, SimConditions)
+    assert isinstance(dc, DataCollectionConfig)
     assert isinstance(sys_cfg, SystemConfig)
     assert len(floats) == 1
     assert isinstance(fit_cfg, FittingConfiguration)
-    # Optical angles now live in DataCollectionConfig, not SystemConfig
-    assert recipe.forward_model.data_collection.polarizer_angle_deg == pytest.approx(45.0)
+    # Optical angles now live in DataCollectionConfig
+    assert dc.polarizer_angle_deg == pytest.approx(45.0)
+    assert dc.aoi_deg == pytest.approx(65.0)
     assert sim_cond.aoi_deg == pytest.approx(65.0)
 
 

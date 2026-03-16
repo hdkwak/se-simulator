@@ -60,7 +60,7 @@ def run_fitting(
     manager = RecipeManager()
     rpath = Path(recipe_path) if recipe_path else None
 
-    stack, sim_conditions, system_config, floating_params, fitting_config = (
+    stack, sim_conditions, dc, system_config, floating_params, fitting_config = (
         manager.decompose_measurement(recipe, rpath)
     )
 
@@ -72,6 +72,7 @@ def run_fitting(
             recipe,
             stack,
             sim_conditions,
+            dc,
             system_config,
             floating_params,
             fitting_config,
@@ -83,6 +84,7 @@ def run_fitting(
             recipe,
             stack,
             sim_conditions,
+            dc,
             system_config,
             floating_params,
             fitting_config,
@@ -114,6 +116,7 @@ def _run_tmm_direct(
     recipe: MeasurementRecipe,
     stack,
     sim_conditions,
+    dc,
     system_config,
     floating_params,
     fitting_config,
@@ -133,8 +136,8 @@ def _run_tmm_direct(
 
     fitter = TmmDirectFitter(
         stack=effective_stack,
-        sample_config=None if effective_stack is not None else None,
         sim_conditions=sim_conditions,
+        data_collection=dc,
         system_config=system_config,
         floating_params=floating_params,
         fitting_config=fitting_config,
@@ -153,6 +156,7 @@ def _run_library(
     recipe: MeasurementRecipe,
     stack,
     sim_conditions,
+    dc,
     system_config,
     floating_params,
     fitting_config,

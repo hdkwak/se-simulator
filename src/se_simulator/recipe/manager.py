@@ -300,26 +300,29 @@ class RecipeManager:
 
     def decompose_measurement(
         self, recipe: MeasurementRecipe, recipe_path: Path | None = None
-    ) -> tuple[Stack, SimConditions, SystemConfig, Any, Any]:
-        """Convert a MeasurementRecipe into its five sub-objects.
+    ) -> tuple[Stack, SimConditions, DataCollectionConfig, SystemConfig, Any, Any]:
+        """Convert a MeasurementRecipe into its six sub-objects.
 
         Returns
         -------
-        (Stack, SimConditions, SystemConfig,
+        (Stack, SimConditions, DataCollectionConfig, SystemConfig,
          list[FloatingParameter], FittingConfiguration)
 
-        The first element is now a :class:`Stack` object.  Pass it directly to
-        ``RCWAEngine.run()`` or ``TmmDirectFitter`` which accept ``Stack`` natively.
+        * ``Stack`` — pass directly to ``RCWAEngine.run()`` or ``TmmDirectFitter``
+        * ``DataCollectionConfig`` — per-measurement optical settings
+          (AOI, polarizer/analyzer/compensator angles, wavelength range)
+        * ``SystemConfig`` — instrument hardware config (calibration, geometry)
         """
         fm = recipe.forward_model
 
         # --- sample (via stack) ---
         stack = _resolve_stack_ref(fm.stack, recipe_path)  # type: ignore[arg-type]
 
-        # --- simulation conditions ---
-        sim_conditions = _dc_and_embed_to_sim_conditions(
-            fm.data_collection, fm.simulation_conditions
-        )
+        # --- data collection (optical + wavelength settings) ---
+        dc = fm.data_collection
+
+        # --- simulation conditions (algorithm knobs + promoted optical settings) ---
+        sim_conditions = _dc_and_embed_to_sim_conditions(dc, fm.simulation_conditions)
 
         # --- system config ---
         system_config: SystemConfig | None = None
@@ -338,6 +341,7 @@ class RecipeManager:
         return (
             stack,
             sim_conditions,
+            dc,
             system_config,
             recipe.floating_parameters,
             recipe.fitting_configuration,

@@ -138,7 +138,7 @@ class RecipeFittingWorker(QThread):
             # Decompose recipe
             manager = RecipeManager()
             rpath = Path(self._recipe_path) if self._recipe_path else None
-            stack, sim_conditions, system_config, floating_params, fitting_config = (
+            stack, sim_conditions, dc, system_config, floating_params, fitting_config = (
                 manager.decompose_measurement(self._recipe, rpath)
             )
 
@@ -150,6 +150,7 @@ class RecipeFittingWorker(QThread):
                 fitter = TmmDirectFitter(
                     stack=stack,
                     sim_conditions=sim_conditions,
+                    data_collection=dc,
                     system_config=system_config,
                     floating_params=floating_params,
                     fitting_config=fitting_config,
