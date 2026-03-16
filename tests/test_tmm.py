@@ -231,9 +231,6 @@ def test_tmm_single_layer_psi_delta_physical(single_layer_sample, wavelengths_10
     from se_simulator.config.schemas import CompensatorRetardanceModel, SystemConfig
     system = SystemConfig(
         instrument_name="test",
-        polarizer_angle_deg=45.0,
-        analyzer_angle_deg=45.0,
-        compensator_angle_deg=0.0,
         compensator_retardance=CompensatorRetardanceModel(type="constant", value=90.0),
     )
 

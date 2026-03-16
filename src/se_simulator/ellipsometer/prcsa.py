@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 from scipy.interpolate import CubicSpline
 
-from se_simulator.config.schemas import SystemConfig
+from se_simulator.config.schemas import DataCollectionConfig, SystemConfig
 from se_simulator.ellipsometer.jones import linear_polarizer, rotating_compensator
 from se_simulator.ellipsometer.signals import EllipsometryResult
 from se_simulator.rcwa.results import RCWAResult
@@ -15,6 +15,24 @@ from se_simulator.rcwa.results import RCWAResult
 if TYPE_CHECKING:
     from se_simulator.config.schemas import SampleConfig, SimConditions
     from se_simulator.rcwa.engine import RCWAEngine
+
+
+def _angles_from(
+    system: SystemConfig,
+    data_collection: DataCollectionConfig | None,
+) -> tuple[float, float, float]:
+    """Return (polarizer_deg, analyzer_deg, compensator_deg) from DataCollectionConfig.
+
+    Falls back to 45 / 45 / 0 defaults when no DataCollectionConfig is available.
+    """
+    if data_collection is not None:
+        return (
+            data_collection.polarizer_angle_deg,
+            data_collection.analyzer_angle_deg,
+            data_collection.compensator_angle_deg,
+        )
+    # Graceful fallback — PSA geometry defaults
+    return 45.0, 45.0, 0.0
 
 _M = 1024  # Number of compensator rotation samples
 
@@ -52,14 +70,16 @@ def compute_fourier_coefficients(
     jones_r: np.ndarray,
     system: SystemConfig,
     retardance_deg: float,
+    data_collection: DataCollectionConfig | None = None,
 ) -> dict[str, float]:
     """Compute normalized PRCSA Fourier coefficients via numerical FFT.
 
     I(δ) = I₀ [1 + α cos(2δ) + β sin(2δ) + χ cos(4δ) + ξ sin(4δ)]
+
+    Optical angles (polarizer, analyzer, compensator) are taken from
+    *data_collection* when provided; otherwise defaults (45°, 45°, 0°) are used.
     """
-    p_deg = system.polarizer_angle_deg
-    a_deg = system.analyzer_angle_deg
-    c_deg = system.compensator_angle_deg
+    p_deg, a_deg, c_deg = _angles_from(system, data_collection)
 
     j_p = linear_polarizer(p_deg)
     j_a = linear_polarizer(a_deg)
@@ -138,12 +158,18 @@ def apply_depolarization(
 def compute_spectrum(
     rcwa_result: RCWAResult,
     system: SystemConfig,
+    data_collection: DataCollectionConfig | None = None,
     include_calibration_errors: bool = False,
     rcwa_engine: RCWAEngine | None = None,
     sample: SampleConfig | None = None,
     sim: SimConditions | None = None,
 ) -> EllipsometryResult:
-    """Compute the full ellipsometric spectrum from RCWA results."""
+    """Compute the full ellipsometric spectrum from RCWA results.
+
+    Optical angles (polarizer, analyzer, compensator) come from *data_collection*
+    when provided; otherwise defaults (45°/45°/0°) are used.
+    Instrument calibration settings come from *system*.
+    """
     from se_simulator.ellipsometer.calibration import apply_calibration_errors
 
     wavelengths_nm = np.asarray(rcwa_result.wavelengths_nm)
@@ -169,13 +195,17 @@ def compute_spectrum(
     for i, wl in enumerate(wavelengths_nm):
         jr = rcwa_result.jones_reflection[i]
         if include_calibration_errors:
-            jr = apply_calibration_errors(jr, system, float(wl))
+            jr = apply_calibration_errors(
+                jr, system, float(wl), data_collection=data_collection
+            )
         if use_depolarization:
             jr = apply_depolarization(jr, system, float(wl), rcwa_engine, sample, sim)
 
         psi_arr[i], delta_arr[i] = compute_psi_delta(jr)
 
-        coeffs = compute_fourier_coefficients(jr, system, float(retardances[i]))
+        coeffs = compute_fourier_coefficients(
+            jr, system, float(retardances[i]), data_collection=data_collection
+        )
         alpha_arr[i] = coeffs["alpha"]
         beta_arr[i] = coeffs["beta"]
         chi_arr[i] = coeffs["chi"]

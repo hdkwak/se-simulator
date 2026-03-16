@@ -7,32 +7,43 @@ metadata:
   material_db_version: ''
 
 forward_model:
-  sample:
+  stack:
     inline:
       superstrate:
+        name: Air
+        source: library
         library_name: Air
       substrate:
+        name: Si
+        source: library
         library_name: Si
       layers:
       - name: SiO2 Layer
         type: uniform
         thickness_nm: 100.0
         material:
+          name: SiO2
+          source: library
           library_name: SiO2
-  simulation_conditions:
+  data_collection:
+    aoi_deg: 65.0
+    azimuth_deg: 0.0
+    polarizer_angle_deg: 45.0
+    analyzer_angle_deg: 45.0
+    compensator_angle_deg: 0.0
     wavelength_start_nm: 300.0
     wavelength_end_nm: 800.0
     wavelength_step_nm: 2.0
-    aoi_degrees: 65.0
-    azimuth_degrees: 0.0
-    polarizer_degrees: 45.0
-    analyzer_degrees: 45.0
-  engine_override: auto
-  system: {}
+  simulation_conditions:
+    n_harmonics_x: 5
+    n_harmonics_y: 5
+    li_factorization: true
+    engine_override: auto
+  system_config_ref: ''
 
 floating_parameters:
 - name: SiO2 thickness
-  target_field: forward_model.sample.inline.layers[0].thickness_nm
+  target_field: layers[0].thickness_nm
   min: 10.0
   max: 500.0
   initial: 100.0
@@ -40,7 +51,7 @@ floating_parameters:
   units: nm
 
 fitting_configuration:
-  fitting_mode: auto
+  fitting_mode: tmm_direct
   fit_signals:
   - psi
   - delta
@@ -57,13 +68,3 @@ output_options:
   save_recipe_with_results: true
   save_fit_report: true
   save_fitted_spectrum: true
-results:
-  fitted_parameters:
-    SiO2 thickness: 80.09999999243891
-  fit_quality:
-    rmse: 2.8707172000970825e-07
-    chi2: 4.136990655952484e-11
-    n_iter: 13.0
-    converged: 1.0
-  engine_used: tmm_direct
-  timestamp: '2026-03-14T11:09:27.899109+00:00'

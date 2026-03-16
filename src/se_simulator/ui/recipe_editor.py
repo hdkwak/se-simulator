@@ -682,23 +682,23 @@ class RecipeEditorDialog(QDialog):
             self._meta_author.setText(getattr(meta, "author", "") or "")
             self._meta_description.setPlainText(getattr(meta, "description", "") or "")
 
-        # Simulation conditions
-        sim_conds = None
-        if hasattr(recipe, "simulation_conditions"):
-            sim_conds = recipe.simulation_conditions
+        # Data collection (optical + wavelength settings)
+        dc = None
+        if hasattr(recipe, "data_collection"):
+            dc = recipe.data_collection
         elif hasattr(recipe, "forward_model") and hasattr(
-            recipe.forward_model, "simulation_conditions"
+            recipe.forward_model, "data_collection"
         ):
-            sim_conds = recipe.forward_model.simulation_conditions
+            dc = recipe.forward_model.data_collection
 
-        if sim_conds is not None:
-            self._cond_wl_start.setText(str(getattr(sim_conds, "wavelength_start_nm", "")))
-            self._cond_wl_end.setText(str(getattr(sim_conds, "wavelength_end_nm", "")))
-            self._cond_wl_step.setText(str(getattr(sim_conds, "wavelength_step_nm", "")))
-            self._cond_aoi.setText(str(getattr(sim_conds, "aoi_degrees", "")))
-            self._cond_azimuth.setText(str(getattr(sim_conds, "azimuth_degrees", "")))
-            self._cond_polarizer.setText(str(getattr(sim_conds, "polarizer_degrees", "")))
-            self._cond_analyzer.setText(str(getattr(sim_conds, "analyzer_degrees", "")))
+        if dc is not None:
+            self._cond_wl_start.setText(str(getattr(dc, "wavelength_start_nm", "")))
+            self._cond_wl_end.setText(str(getattr(dc, "wavelength_end_nm", "")))
+            self._cond_wl_step.setText(str(getattr(dc, "wavelength_step_nm", "")))
+            self._cond_aoi.setText(str(getattr(dc, "aoi_deg", "")))
+            self._cond_azimuth.setText(str(getattr(dc, "azimuth_deg", "")))
+            self._cond_polarizer.setText(str(getattr(dc, "polarizer_angle_deg", "")))
+            self._cond_analyzer.setText(str(getattr(dc, "analyzer_angle_deg", "")))
 
         # Sample — prefer the new stack field, fall back to legacy sample field
         stack_ref = None
@@ -828,7 +828,7 @@ class RecipeEditorDialog(QDialog):
                 }
             )
 
-        def _updated_conditions(base: SimulationConditionsEmbed) -> SimulationConditionsEmbed:
+        def _updated_data_collection(base: "DataCollectionConfig") -> "DataCollectionConfig":
             return base.model_copy(
                 update={
                     "wavelength_start_nm": _float_or(
@@ -840,15 +840,13 @@ class RecipeEditorDialog(QDialog):
                     "wavelength_step_nm": _float_or(
                         self._cond_wl_step.text(), base.wavelength_step_nm
                     ),
-                    "aoi_degrees": _float_or(self._cond_aoi.text(), base.aoi_degrees),
-                    "azimuth_degrees": _float_or(
-                        self._cond_azimuth.text(), base.azimuth_degrees
+                    "aoi_deg": _float_or(self._cond_aoi.text(), base.aoi_deg),
+                    "azimuth_deg": _float_or(self._cond_azimuth.text(), base.azimuth_deg),
+                    "polarizer_angle_deg": _float_or(
+                        self._cond_polarizer.text(), base.polarizer_angle_deg
                     ),
-                    "polarizer_degrees": _float_or(
-                        self._cond_polarizer.text(), base.polarizer_degrees
-                    ),
-                    "analyzer_degrees": _float_or(
-                        self._cond_analyzer.text(), base.analyzer_degrees
+                    "analyzer_angle_deg": _float_or(
+                        self._cond_analyzer.text(), base.analyzer_angle_deg
                     ),
                 }
             )
@@ -912,9 +910,7 @@ class RecipeEditorDialog(QDialog):
             return self._recipe.model_copy(
                 update={
                     "metadata": _updated_metadata(self._recipe.metadata),
-                    "simulation_conditions": _updated_conditions(
-                        self._recipe.simulation_conditions
-                    ),
+                    "data_collection": _updated_data_collection(self._recipe.data_collection),
                     "stack": self._build_stack_ref(),
                 }
             )
@@ -923,7 +919,7 @@ class RecipeEditorDialog(QDialog):
             fm = self._recipe.forward_model
             updated_fm = fm.model_copy(
                 update={
-                    "simulation_conditions": _updated_conditions(fm.simulation_conditions),
+                    "data_collection": _updated_data_collection(fm.data_collection),
                     "stack": self._build_stack_ref(),
                 }
             )

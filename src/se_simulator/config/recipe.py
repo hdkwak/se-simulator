@@ -1,11 +1,12 @@
 """Pydantic v2 models for Simulation and Measurement Recipes."""
 from __future__ import annotations
 
+import warnings
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from se_simulator.config.schemas import MaterialSpec, Stack, StackLayer
+from se_simulator.config.schemas import DataCollectionConfig, MaterialSpec, Stack, StackLayer, WavelengthSpec
 
 
 class RecipeMetadata(BaseModel):
@@ -101,15 +102,24 @@ def _sampleref_to_stackref(sample_ref: SampleRef) -> StackRef:
 
 
 class SimulationConditionsEmbed(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    """Algorithm-only simulation knobs embedded in a recipe.
 
-    wavelength_start_nm: float
-    wavelength_end_nm: float
-    wavelength_step_nm: float
-    aoi_degrees: float
-    azimuth_degrees: float = 0.0
-    polarizer_degrees: float = 45.0
-    analyzer_degrees: float = 45.0
+    Optical and wavelength settings (AOI, polarizer/analyzer angles, wavelength
+    range) now live in :class:`DataCollectionConfig`.  Legacy YAMLs that still
+    carry those fields under ``simulation_conditions`` are silently promoted to
+    ``data_collection`` by the parent model validator.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    # Algorithm parameters
+    n_harmonics_x: int = 5
+    n_harmonics_y: int = 5
+    li_factorization: bool = True
+    parallel_wavelengths: bool = False
+    output_jones: bool = False
+    output_orders: bool = False
+    engine_override: Literal["auto", "rcwa", "tmm"] = "auto"
 
 
 class SimulationRecipeOutputOptions(BaseModel):
@@ -120,6 +130,50 @@ class SimulationRecipeOutputOptions(BaseModel):
     save_mueller: bool = False
 
 
+def _extract_legacy_data_collection(data: dict) -> dict:
+    """Pull optical/wavelength fields out of simulation_conditions into data_collection.
+
+    Mutates *data* in-place and returns it.  Emits DeprecationWarning when
+    any migration happens.
+    """
+    sc = data.get("simulation_conditions")
+    if not isinstance(sc, dict):
+        return data
+
+    _OPTICAL_KEYS = {
+        "wavelength_start_nm", "wavelength_end_nm", "wavelength_step_nm",
+        "aoi_degrees", "azimuth_degrees", "polarizer_degrees", "analyzer_degrees",
+    }
+    found = {k: sc.pop(k) for k in list(sc) if k in _OPTICAL_KEYS}
+    if not found:
+        return data
+
+    warnings.warn(
+        "Recipe simulation_conditions contains deprecated optical/wavelength fields "
+        f"({list(found)}). Move them to a data_collection block instead.",
+        DeprecationWarning,
+        stacklevel=5,
+    )
+
+    if "data_collection" not in data:
+        data["data_collection"] = {}
+    dc = data["data_collection"]
+
+    # Renames: legacy → DataCollectionConfig field names
+    _RENAME = {
+        "aoi_degrees": "aoi_deg",
+        "azimuth_degrees": "azimuth_deg",
+        "polarizer_degrees": "polarizer_angle_deg",
+        "analyzer_degrees": "analyzer_angle_deg",
+    }
+    for old, val in found.items():
+        new_key = _RENAME.get(old, old)
+        if new_key not in dc:
+            dc[new_key] = val
+
+    return data
+
+
 class SimulationRecipe(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -128,11 +182,20 @@ class SimulationRecipe(BaseModel):
     sample: SampleRef | None = None
     # New first-class field
     stack: StackRef | None = None
-    simulation_conditions: SimulationConditionsEmbed
-    engine_override: Literal["auto", "rcwa", "tmm"] = "auto"
+    data_collection: DataCollectionConfig = Field(default_factory=DataCollectionConfig)
+    simulation_conditions: SimulationConditionsEmbed = Field(
+        default_factory=SimulationConditionsEmbed
+    )
     output_options: SimulationRecipeOutputOptions = Field(
         default_factory=SimulationRecipeOutputOptions
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _promote_legacy_optical_fields(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            _extract_legacy_data_collection(data)
+        return data
 
     @model_validator(mode="after")
     def _migrate_sample_to_stack(self) -> SimulationRecipe:
@@ -197,9 +260,32 @@ class ForwardModel(BaseModel):
     sample: SampleRef | None = None
     # New first-class field
     stack: StackRef | None = None
-    simulation_conditions: SimulationConditionsEmbed
-    engine_override: Literal["auto", "rcwa", "tmm"] = "auto"
-    system: dict[str, Any]
+    data_collection: DataCollectionConfig = Field(default_factory=DataCollectionConfig)
+    simulation_conditions: SimulationConditionsEmbed = Field(
+        default_factory=SimulationConditionsEmbed
+    )
+    system_config_ref: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_layout(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        # 1. Absorb old `system` dict → extract system_config_ref
+        if "system" in data:
+            sys_dict = data.pop("system") or {}
+            if isinstance(sys_dict, dict):
+                ref = sys_dict.get("system_config_ref", "")
+                if ref and not data.get("system_config_ref"):
+                    warnings.warn(
+                        "ForwardModel.system is deprecated; use system_config_ref (a file path) instead.",
+                        DeprecationWarning,
+                        stacklevel=5,
+                    )
+                    data["system_config_ref"] = ref
+        # 2. Promote optical fields from simulation_conditions → data_collection
+        _extract_legacy_data_collection(data)
+        return data
 
     @model_validator(mode="after")
     def _migrate_sample_to_stack(self) -> ForwardModel:

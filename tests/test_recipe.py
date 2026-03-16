@@ -1,7 +1,8 @@
 """Tests for the Recipe data layer (Step 1).
 
-19 test cases covering:
+19+ test cases covering:
   - SimulationRecipe and MeasurementRecipe Pydantic validation
+  - DataCollectionConfig (new)
   - dotpath get/set utilities
   - RecipeManager load/save round-trips
   - RecipeManager.decompose_simulation / decompose_measurement
@@ -30,7 +31,13 @@ from se_simulator.config.recipe import (
     SimulationRecipe,
     SimulationRecipeOutputOptions,
 )
-from se_simulator.config.schemas import SampleConfig, SimConditions, Stack, SystemConfig
+from se_simulator.config.schemas import (
+    DataCollectionConfig,
+    SampleConfig,
+    SimConditions,
+    Stack,
+    SystemConfig,
+)
 from se_simulator.recipe.dotpath import resolve_get, resolve_set
 from se_simulator.recipe.manager import RecipeManager, RecipeValidationError
 
@@ -47,7 +54,9 @@ INLINE_SAMPLE: dict[str, Any] = {
     ],
 }
 
-SIM_CONDITIONS: dict[str, Any] = {
+# Legacy-style sim conditions (optical fields in simulation_conditions) for
+# backward-compat testing.
+LEGACY_SIM_CONDITIONS: dict[str, Any] = {
     "wavelength_start_nm": 300.0,
     "wavelength_end_nm": 900.0,
     "wavelength_step_nm": 2.0,
@@ -57,24 +66,36 @@ SIM_CONDITIONS: dict[str, Any] = {
     "analyzer_degrees": 45.0,
 }
 
+DATA_COLLECTION: dict[str, Any] = {
+    "aoi_deg": 65.0,
+    "azimuth_deg": 0.0,
+    "polarizer_angle_deg": 45.0,
+    "analyzer_angle_deg": 45.0,
+    "wavelength_start_nm": 300.0,
+    "wavelength_end_nm": 900.0,
+    "wavelength_step_nm": 2.0,
+}
+
 
 def _make_sim_recipe() -> SimulationRecipe:
     return SimulationRecipe(
         metadata=RecipeMetadata(recipe_type="simulation"),
         sample=SampleRef(inline=INLINE_SAMPLE),
-        simulation_conditions=SimulationConditionsEmbed(**SIM_CONDITIONS),
+        data_collection=DataCollectionConfig(**DATA_COLLECTION),
+        simulation_conditions=SimulationConditionsEmbed(),
     )
 
 
 def _make_meas_recipe() -> MeasurementRecipe:
     fm = ForwardModel(
         sample=SampleRef(inline=INLINE_SAMPLE),
-        simulation_conditions=SimulationConditionsEmbed(**SIM_CONDITIONS),
-        system={"system_config_ref": ""},
+        data_collection=DataCollectionConfig(**DATA_COLLECTION),
+        simulation_conditions=SimulationConditionsEmbed(),
+        system_config_ref="",
     )
     fp = FloatingParameter(
         name="sio2_thickness",
-        target_field="forward_model.sample.inline.layers[0].thickness_nm",
+        target_field="layers[0].thickness_nm",
         min=0.0,
         max=500.0,
         initial=100.0,
@@ -99,24 +120,24 @@ def manager() -> RecipeManager:
 def test_simulation_recipe_valid() -> None:
     recipe = _make_sim_recipe()
     assert recipe.metadata.recipe_type == "simulation"
-    assert recipe.engine_override == "auto"
+    assert recipe.simulation_conditions.engine_override == "auto"
     assert recipe.output_options.save_psi_delta is True
+    assert recipe.data_collection.aoi_deg == pytest.approx(65.0)
 
 
 # ---------------------------------------------------------------------------
-# 2. SimulationRecipe validation — missing required field
+# 2. SimulationRecipe validation — missing stack/sample raises
 # ---------------------------------------------------------------------------
 
 def test_simulation_recipe_missing_field() -> None:
     from pydantic import ValidationError
 
     with pytest.raises(ValidationError):
-        # simulation_conditions is required
+        # Both stack and sample absent → validator raises
         SimulationRecipe.model_validate(
             {
                 "metadata": {"recipe_type": "simulation"},
-                "sample": {"inline": INLINE_SAMPLE},
-                # missing simulation_conditions
+                # no stack, no sample
             }
         )
 
@@ -222,8 +243,8 @@ def test_sim_recipe_round_trip(
 
     loaded = manager.load_simulation_recipe(out)
     assert loaded.metadata.recipe_type == "simulation"
-    assert loaded.simulation_conditions.aoi_degrees == pytest.approx(65.0)
-    assert loaded.simulation_conditions.wavelength_start_nm == pytest.approx(300.0)
+    assert loaded.data_collection.aoi_deg == pytest.approx(65.0)
+    assert loaded.data_collection.wavelength_start_nm == pytest.approx(300.0)
 
 
 # ---------------------------------------------------------------------------
@@ -255,11 +276,9 @@ def test_decompose_simulation(manager: RecipeManager) -> None:
     recipe = _make_sim_recipe()
     sample, sim_cond = manager.decompose_simulation(recipe)
 
-    # decompose_simulation now returns Stack (preferred API)
     assert isinstance(sample, Stack)
     assert isinstance(sim_cond, SimConditions)
 
-    # Stack fields: superstrate/substrate are MaterialSpec objects
     assert sample.superstrate.library_name == "Air" or sample.superstrate.name == "Air"
     assert sample.substrate.library_name == "Si" or sample.substrate.name == "Si"
     assert sim_cond.aoi_deg == pytest.approx(65.0)
@@ -275,13 +294,14 @@ def test_decompose_measurement(manager: RecipeManager) -> None:
     recipe = _make_meas_recipe()
     sample, sim_cond, sys_cfg, floats, fit_cfg = manager.decompose_measurement(recipe)
 
-    # decompose_measurement now returns Stack (preferred API)
     assert isinstance(sample, Stack)
     assert isinstance(sim_cond, SimConditions)
     assert isinstance(sys_cfg, SystemConfig)
     assert len(floats) == 1
     assert isinstance(fit_cfg, FittingConfiguration)
-    assert sys_cfg.polarizer_angle_deg == pytest.approx(45.0)
+    # Optical angles now live in DataCollectionConfig, not SystemConfig
+    assert recipe.forward_model.data_collection.polarizer_angle_deg == pytest.approx(45.0)
+    assert sim_cond.aoi_deg == pytest.approx(65.0)
 
 
 # ---------------------------------------------------------------------------
@@ -315,7 +335,6 @@ def test_validate_bad_yaml(manager: RecipeManager, tmp_path: Path) -> None:
     bad = tmp_path / "bad.yaml"
     bad.write_text(": invalid: yaml: [[[")
     errors = manager.validate(bad)
-    # Should have a YAML parse error OR a structural error
     assert len(errors) >= 1
 
 
@@ -325,7 +344,6 @@ def test_validate_bad_yaml(manager: RecipeManager, tmp_path: Path) -> None:
 
 def test_validate_floating_param_out_of_bounds(manager: RecipeManager, tmp_path: Path) -> None:
     recipe = _make_meas_recipe()
-    # Mutate so initial is out of range
     recipe.floating_parameters[0].initial = 9999.0  # max is 500
     out = tmp_path / "bad_param.yaml"
     manager.save_measurement_recipe(recipe, out)
@@ -340,18 +358,17 @@ def test_validate_floating_param_out_of_bounds(manager: RecipeManager, tmp_path:
 
 def test_export_as_simulation(manager: RecipeManager) -> None:
     recipe = _make_meas_recipe()
-    # Set initial to something distinct from the template value
     recipe.floating_parameters[0].initial = 250.0
 
     sim_recipe = manager.export_as_simulation(recipe)
 
     assert isinstance(sim_recipe, SimulationRecipe)
     assert sim_recipe.metadata.recipe_type == "simulation"
-    # The layer thickness should have been pinned to the initial value.
-    # New Stack-based access path:
     assert sim_recipe.stack is not None
     assert sim_recipe.stack.inline is not None
     assert sim_recipe.stack.inline.layers[0].thickness_nm == pytest.approx(250.0)
+    # DataCollectionConfig should be preserved
+    assert sim_recipe.data_collection.aoi_deg == pytest.approx(65.0)
 
 
 # ---------------------------------------------------------------------------
@@ -361,7 +378,6 @@ def test_export_as_simulation(manager: RecipeManager) -> None:
 def test_append_results_and_get_recent(
     manager: RecipeManager, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Redirect recent file to tmp_path so we don't pollute the real one
     import se_simulator.recipe.manager as rm_module
 
     fake_recent = tmp_path / "recent_recipes.json"
@@ -370,7 +386,7 @@ def test_append_results_and_get_recent(
     recipe = _make_meas_recipe()
     out = tmp_path / "meas_with_results.yaml"
     manager.save_measurement_recipe(recipe, out)
-    manager.load_measurement_recipe(out)  # populates recent list
+    manager.load_measurement_recipe(out)
 
     results = FitResults(
         fitted_parameters={"sio2_thickness": 123.4},
@@ -380,12 +396,10 @@ def test_append_results_and_get_recent(
     )
     manager.append_results(results, out)
 
-    # Reload and check results block is present
     reloaded = manager.load_measurement_recipe(out)
     assert reloaded.results is not None
     assert reloaded.results.fitted_parameters["sio2_thickness"] == pytest.approx(123.4)
 
-    # Check get_recent
     recent = manager.get_recent(5)
     assert len(recent) >= 1
     paths = [p for p, _ in recent]
@@ -400,7 +414,6 @@ def test_legacy_sample_key_migrates_to_stack(manager: RecipeManager, tmp_path: P
     """A YAML file using the old `sample:` key must load and auto-migrate to `stack`."""
     from se_simulator.config.recipe import StackRef
 
-    # Write a minimal legacy simulation recipe YAML by hand
     legacy_yaml = tmp_path / "legacy_sim.yaml"
     legacy_yaml.write_text(
         "metadata:\n"
@@ -426,12 +439,14 @@ def test_legacy_sample_key_migrates_to_stack(manager: RecipeManager, tmp_path: P
 
     recipe = manager.load_simulation_recipe(legacy_yaml)
 
-    # stack must be populated from the legacy sample key
     assert isinstance(recipe.stack, StackRef)
     assert recipe.stack.inline is not None
     assert recipe.stack.inline.layers[0].thickness_nm == pytest.approx(150.0)
     assert recipe.stack.inline.superstrate.library_name == "Air"
     assert recipe.stack.inline.substrate.library_name == "Si"
+    # Legacy optical fields should be promoted to data_collection
+    assert recipe.data_collection.aoi_deg == pytest.approx(65.0)
+    assert recipe.data_collection.wavelength_start_nm == pytest.approx(300.0)
 
 
 # ---------------------------------------------------------------------------
@@ -439,7 +454,6 @@ def test_legacy_sample_key_migrates_to_stack(manager: RecipeManager, tmp_path: P
 # ---------------------------------------------------------------------------
 
 def test_simulation_recipe_with_stack_field() -> None:
-    """SimulationRecipe constructed with `stack=` (no `sample=`) validates correctly."""
     from se_simulator.config.recipe import StackRef
     from se_simulator.config.schemas import MaterialSpec, Stack, StackLayer
 
@@ -456,11 +470,32 @@ def test_simulation_recipe_with_stack_field() -> None:
     recipe = SimulationRecipe(
         metadata=RecipeMetadata(recipe_type="simulation"),
         stack=StackRef(inline=stack),
-        simulation_conditions=SimulationConditionsEmbed(**SIM_CONDITIONS),
+        data_collection=DataCollectionConfig(**DATA_COLLECTION),
+        simulation_conditions=SimulationConditionsEmbed(),
     )
 
     assert recipe.stack is not None
     assert recipe.stack.inline is not None
     assert recipe.stack.inline.layers[0].thickness_nm == pytest.approx(200.0)
-    # stack-based recipe has no legacy sample field
     assert recipe.sample is None
+
+
+# ---------------------------------------------------------------------------
+# 22. Backward-compat: legacy simulation_conditions optical fields promoted to data_collection
+# ---------------------------------------------------------------------------
+
+def test_legacy_sim_conditions_promoted_to_data_collection() -> None:
+    """Old recipes with optical fields in simulation_conditions get promoted automatically."""
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        recipe = SimulationRecipe(
+            metadata=RecipeMetadata(recipe_type="simulation"),
+            sample=SampleRef(inline=INLINE_SAMPLE),
+            simulation_conditions=SimulationConditionsEmbed(**LEGACY_SIM_CONDITIONS),
+        )
+
+    assert recipe.data_collection.aoi_deg == pytest.approx(65.0)
+    assert recipe.data_collection.polarizer_angle_deg == pytest.approx(45.0)
+    assert recipe.data_collection.wavelength_start_nm == pytest.approx(300.0)

@@ -19,6 +19,7 @@ from se_simulator.config.recipe import (
     SimulationConditionsEmbed,
 )
 from se_simulator.config.schemas import (
+    DataCollectionConfig,
     GratingLayer,
     MaterialSpec,
     SampleConfig,
@@ -37,13 +38,17 @@ _WL_END = 700.0
 _WL_STEP = 25.0
 
 
-def _sim_cond_embed() -> SimulationConditionsEmbed:
-    return SimulationConditionsEmbed(
+def _data_collection() -> DataCollectionConfig:
+    return DataCollectionConfig(
+        aoi_deg=65.0,
         wavelength_start_nm=_WL_START,
         wavelength_end_nm=_WL_END,
         wavelength_step_nm=_WL_STEP,
-        aoi_degrees=65.0,
     )
+
+
+def _sim_cond_embed() -> SimulationConditionsEmbed:
+    return SimulationConditionsEmbed()
 
 
 # ---------------------------------------------------------------------------
@@ -93,8 +98,8 @@ def _make_measurement_recipe_ref(
         metadata=RecipeMetadata(recipe_type="measurement"),
         forward_model=ForwardModel(
             sample=SampleRef(ref=str(sample_yaml_path)),
+            data_collection=_data_collection(),
             simulation_conditions=_sim_cond_embed(),
-            system={},
         ),
         floating_parameters=[
             FloatingParameter(

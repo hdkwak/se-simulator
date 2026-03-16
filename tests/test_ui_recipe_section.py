@@ -37,15 +37,16 @@ stack:
           name: SiO2
           source: library
           library_name: SiO2
-simulation_conditions:
+data_collection:
+  aoi_deg: 70.0
+  azimuth_deg: 5.0
+  polarizer_angle_deg: 45.0
+  analyzer_angle_deg: 45.0
   wavelength_start_nm: 300.0
   wavelength_end_nm: 800.0
   wavelength_step_nm: 10.0
-  aoi_degrees: 70.0
-  azimuth_degrees: 5.0
-  polarizer_degrees: 45.0
-  analyzer_degrees: 45.0
-engine_override: auto
+simulation_conditions:
+  engine_override: auto
 output_options:
   save_psi_delta: true
   save_jones: false
@@ -78,18 +79,16 @@ forward_model:
             name: SiO2
             source: library
             library_name: SiO2
-  simulation_conditions:
+  data_collection:
+    aoi_deg: 65.0
+    azimuth_deg: 0.0
+    polarizer_angle_deg: 45.0
+    analyzer_angle_deg: 45.0
     wavelength_start_nm: 300.0
     wavelength_end_nm: 800.0
     wavelength_step_nm: 10.0
-    aoi_degrees: 65.0
-    azimuth_degrees: 0.0
-    polarizer_degrees: 45.0
-    analyzer_degrees: 45.0
-  engine_override: auto
-  system:
-    polarizer_angle_deg: 45.0
-    analyzer_angle_deg: 45.0
+  simulation_conditions:
+    engine_override: auto
 floating_parameters:
   - name: thickness
     target_field: layers[0].thickness_nm
@@ -250,7 +249,7 @@ def test_save_back_to_recipe_persists(qtbot, tmp_path, sim_recipe):
 
     # Reload from disk (bypass recent-list update)
     reloaded = _parse_sim_recipe(dest.read_text())
-    assert abs(reloaded.simulation_conditions.aoi_degrees - 72.5) < 0.01
+    assert abs(reloaded.data_collection.aoi_deg - 72.5) < 0.01
 
 
 # ---------------------------------------------------------------------------

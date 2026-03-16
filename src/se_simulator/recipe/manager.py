@@ -19,6 +19,7 @@ from se_simulator.config.recipe import (
     _inline_dict_to_stack,
 )
 from se_simulator.config.schemas import (
+    DataCollectionConfig,
     SampleConfig,
     SimConditions,
     Stack,
@@ -121,23 +122,27 @@ def _inline_to_sample_config(inline: dict[str, Any]) -> SampleConfig:
     return _inline_dict_to_stack(inline).to_sample_config()
 
 
-def _embed_to_sim_conditions(embed_dict: dict[str, Any]) -> SimConditions:
-    """Convert a SimulationConditionsEmbed dict to a SimConditions object.
+def _dc_and_embed_to_sim_conditions(
+    dc: "DataCollectionConfig",
+    embed: "SimulationConditionsEmbed",
+) -> SimConditions:
+    """Build a SimConditions from DataCollectionConfig + SimulationConditionsEmbed.
 
-    Field mapping:
-      aoi_degrees        -> aoi_deg
-      azimuth_degrees    -> azimuth_deg
-      wavelength_*_nm    -> wavelengths (WavelengthSpec range)
-      polarizer_degrees  -> stored in SystemConfig, not SimConditions (ignored here)
-      analyzer_degrees   -> stored in SystemConfig, not SimConditions (ignored here)
+    Optical/wavelength settings come from *dc*; algorithm knobs from *embed*.
     """
-    start = embed_dict["wavelength_start_nm"]
-    end = embed_dict["wavelength_end_nm"]
-    step = embed_dict["wavelength_step_nm"]
     return SimConditions(
-        aoi_deg=embed_dict["aoi_degrees"],
-        azimuth_deg=embed_dict.get("azimuth_degrees", 0.0),
-        wavelengths=WavelengthSpec(range=(start, end, step)),
+        aoi_deg=dc.aoi_deg,
+        azimuth_deg=dc.azimuth_deg,
+        wavelengths=WavelengthSpec(
+            range=(dc.wavelength_start_nm, dc.wavelength_end_nm, dc.wavelength_step_nm)
+        ),
+        n_harmonics_x=embed.n_harmonics_x,
+        n_harmonics_y=embed.n_harmonics_y,
+        li_factorization=embed.li_factorization,
+        parallel_wavelengths=embed.parallel_wavelengths,
+        output_jones=embed.output_jones,
+        output_orders=embed.output_orders,
+        engine_override=embed.engine_override,
     )
 
 
@@ -288,7 +293,9 @@ class RecipeManager:
         ``RCWAEngine.run()`` which accepts ``Stack`` natively.
         """
         stack = _resolve_stack_ref(recipe.stack, recipe_path)  # type: ignore[arg-type]
-        sim_conditions = _embed_to_sim_conditions(recipe.simulation_conditions.model_dump())
+        sim_conditions = _dc_and_embed_to_sim_conditions(
+            recipe.data_collection, recipe.simulation_conditions
+        )
         return stack, sim_conditions
 
     def decompose_measurement(
@@ -310,23 +317,23 @@ class RecipeManager:
         stack = _resolve_stack_ref(fm.stack, recipe_path)  # type: ignore[arg-type]
 
         # --- simulation conditions ---
-        sim_conditions = _embed_to_sim_conditions(fm.simulation_conditions.model_dump())
+        sim_conditions = _dc_and_embed_to_sim_conditions(
+            fm.data_collection, fm.simulation_conditions
+        )
 
         # --- system config ---
-        sys_dict = fm.system
-        sys_ref = sys_dict.get("system_config_ref", "")
-        if sys_ref:
-            sys_path = Path(sys_ref)
+        system_config: SystemConfig | None = None
+        if fm.system_config_ref:
+            sys_path = Path(fm.system_config_ref)
             if not sys_path.is_absolute() and recipe_path is not None:
                 sys_path = recipe_path.parent / sys_path
             if sys_path.exists():
                 from se_simulator.config.manager import ConfigManager
 
                 system_config = ConfigManager().load_system(sys_path)
-            else:
-                system_config = _default_system_config(recipe)
-        else:
-            system_config = _default_system_config(recipe)
+
+        if system_config is None:
+            system_config = SystemConfig.default()
 
         return (
             stack,
@@ -461,8 +468,8 @@ class RecipeManager:
             return SimulationRecipe(
                 metadata=sim_meta,
                 stack=stack_ref_pinned,
+                data_collection=fm.data_collection,
                 simulation_conditions=fm.simulation_conditions,
-                engine_override=fm.engine_override,
                 output_options=SimulationRecipeOutputOptions(),
             )
 
@@ -488,10 +495,10 @@ class RecipeManager:
         return SimulationRecipe(
             metadata=sim_meta,
             sample=SampleRef.model_validate(fm_dict["sample"]),
+            data_collection=fm.data_collection,
             simulation_conditions=SimulationConditionsEmbed.model_validate(
                 fm_dict["simulation_conditions"]
             ),
-            engine_override=fm.engine_override,
             output_options=SimulationRecipeOutputOptions(),
         )
 

@@ -1,9 +1,7 @@
 schema_version: "1.0"
 instrument_name: "SE Simulator Reference Instrument"
 serial_number: "SIM-001"
-polarizer_angle_deg: 45.0
-analyzer_angle_deg: 45.0
-compensator_angle_deg: 0.0
+geometry: PSA
 compensator_retardance:
   type: constant
   value: 90.0

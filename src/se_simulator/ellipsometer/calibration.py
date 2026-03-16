@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Literal
 
 import numpy as np
 
-from se_simulator.config.schemas import CompensatorRetardanceModel, SystemConfig
+from se_simulator.config.schemas import CompensatorRetardanceModel, DataCollectionConfig, SystemConfig
 from se_simulator.ellipsometer.jones import rotation_matrix, wave_plate
 
 if TYPE_CHECKING:
@@ -17,6 +17,7 @@ def apply_calibration_errors(
     jones_r: np.ndarray,
     system: SystemConfig,
     wavelength_nm: float,
+    data_collection: DataCollectionConfig | None = None,
 ) -> np.ndarray:
     """Apply instrument angle offset errors to the effective Jones matrix.
 
@@ -60,7 +61,8 @@ def apply_calibration_errors(
 
     # Retardance error: apply additional wave plate at nominal compensator angle
     if delta_ret != 0.0:
-        j_eff = j_eff @ wave_plate(system.compensator_angle_deg, delta_ret)
+        c_deg = data_collection.compensator_angle_deg if data_collection is not None else 0.0
+        j_eff = j_eff @ wave_plate(c_deg, delta_ret)
 
     return j_eff
 

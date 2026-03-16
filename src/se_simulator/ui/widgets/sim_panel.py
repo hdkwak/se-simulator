@@ -278,25 +278,27 @@ class SimulationPanel(QWidget):
     def _on_save_back(self) -> None:
         if self._recipe is None or self._recipe_path is None:
             return
-        from se_simulator.config.recipe import (
-            SimulationConditionsEmbed,
-        )
+        from se_simulator.config.schemas import DataCollectionConfig
         from se_simulator.recipe.manager import RecipeManager
 
         sim = self.build_sim()
         wl = sim.wavelengths.range
         if wl is None:
             return
-        new_conditions = SimulationConditionsEmbed(
-            wavelength_start_nm=wl[0],
-            wavelength_end_nm=wl[1],
-            wavelength_step_nm=wl[2],
-            aoi_degrees=sim.aoi_deg,
-            azimuth_degrees=sim.azimuth_deg,
-        )
+
+        # Get existing data_collection as base (for angle fields we don't control here)
+        existing_dc = getattr(self._recipe, "data_collection", DataCollectionConfig())
+        new_dc = existing_dc.model_copy(update={
+            "wavelength_start_nm": wl[0],
+            "wavelength_end_nm": wl[1],
+            "wavelength_step_nm": wl[2],
+            "aoi_deg": sim.aoi_deg,
+            "azimuth_deg": sim.azimuth_deg,
+        })
+
         recipe = self._recipe
         if hasattr(recipe, "model_copy"):
-            recipe = recipe.model_copy(update={"simulation_conditions": new_conditions})
+            recipe = recipe.model_copy(update={"data_collection": new_dc})
 
         manager = RecipeManager()
         try:

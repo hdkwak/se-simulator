@@ -1,6 +1,8 @@
 """Pydantic v2 configuration schemas for SE-RCWA Simulator."""
 from __future__ import annotations
 
+import warnings
+from enum import Enum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -102,6 +104,73 @@ class WavelengthSpec(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# Instrument geometry enum
+# ---------------------------------------------------------------------------
+
+
+class InstrumentGeometry(str, Enum):
+    """Optical element ordering of the ellipsometer.
+
+    Determines which DataCollectionConfig fields are physically meaningful.
+    """
+
+    PSA = "PSA"    # Polarizer – Sample – Analyzer (no compensator)
+    PSCA = "PSCA"  # Polarizer – Sample – Compensator – Analyzer (rotating compensator)
+    PCSA = "PCSA"  # Polarizer – Compensator – Sample – Analyzer (rotating analyzer)
+
+
+# ---------------------------------------------------------------------------
+# Data collection config — optical + wavelength setup for a measurement
+# ---------------------------------------------------------------------------
+
+
+class DataCollectionConfig(BaseModel):
+    """Per-measurement optical and wavelength settings.
+
+    These fields belong to the measurement/experiment setup, not the simulation
+    algorithm.  They are separated from SimConditions so that the same
+    computational knobs (harmonics, Li factorisation, …) can be reused across
+    measurements with different optical geometry.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    aoi_deg: float = 65.0
+    azimuth_deg: float = 0.0
+    polarizer_angle_deg: float = 45.0
+    analyzer_angle_deg: float = 45.0
+    compensator_angle_deg: float = 0.0   # ignored when geometry == PSA
+    wavelength_start_nm: float = 300.0
+    wavelength_end_nm: float = 800.0
+    wavelength_step_nm: float = 2.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_names(cls, data: Any) -> Any:
+        """Accept old field names from legacy simulation_conditions blocks."""
+        if not isinstance(data, dict):
+            return data
+        renames = {
+            "aoi_degrees": "aoi_deg",
+            "azimuth_degrees": "azimuth_deg",
+            "polarizer_degrees": "polarizer_angle_deg",
+            "analyzer_degrees": "analyzer_angle_deg",
+        }
+        for old, new in renames.items():
+            if old in data and new not in data:
+                data[new] = data.pop(old)
+        return data
+
+    def get_wavelengths(self) -> list[float]:
+        """Return wavelength array as a plain Python list."""
+        import numpy as np
+
+        return list(
+            np.arange(self.wavelength_start_nm, self.wavelength_end_nm + 1e-9, self.wavelength_step_nm)
+        )
+
+
+# ---------------------------------------------------------------------------
 # Fitting conditions
 # ---------------------------------------------------------------------------
 
@@ -184,14 +253,17 @@ class DepolarizationConfig(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SystemConfig(BaseModel):
-    """Instrument (ellipsometer) configuration."""
+    """Instrument (ellipsometer) hardware configuration.
+
+    Only fields that describe fixed properties of the instrument belong here.
+    Per-measurement optical settings (AOI, polarizer/analyzer/compensator angles,
+    wavelength range) now live in :class:`DataCollectionConfig`.
+    """
 
     schema_version: str = "1.0"
-    instrument_name: str
+    instrument_name: str = "SE Simulator Reference Instrument"
     serial_number: str = ""
-    polarizer_angle_deg: float
-    analyzer_angle_deg: float
-    compensator_angle_deg: float = 0.0
+    geometry: InstrumentGeometry = InstrumentGeometry.PSA
     compensator_retardance: CompensatorRetardanceModel = Field(
         default_factory=CompensatorRetardanceModel
     )
@@ -199,6 +271,31 @@ class SystemConfig(BaseModel):
     n_points_per_revolution: int = 50
     calibration_errors: CalibrationErrors = Field(default_factory=CalibrationErrors)
     depolarization: DepolarizationConfig = Field(default_factory=DepolarizationConfig)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _absorb_legacy_optical_fields(cls, data: Any) -> Any:
+        """Drop per-measurement angle fields that have moved to DataCollectionConfig."""
+        if not isinstance(data, dict):
+            return data
+        _MOVED = ("polarizer_angle_deg", "analyzer_angle_deg", "compensator_angle_deg")
+        found = [k for k in _MOVED if k in data]
+        if found:
+            warnings.warn(
+                f"SystemConfig: {found} have moved to DataCollectionConfig. "
+                "Remove them from system_config.yaml and add a data_collection "
+                "block to your recipe instead.",
+                DeprecationWarning,
+                stacklevel=4,
+            )
+            for k in found:
+                data.pop(k)
+        return data
+
+    @classmethod
+    def default(cls) -> SystemConfig:
+        """Return a zero-calibration-error SystemConfig for use when no file is provided."""
+        return cls(instrument_name="SE Simulator (no system config)")
 
 
 # ---------------------------------------------------------------------------

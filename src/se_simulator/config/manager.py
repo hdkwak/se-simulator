@@ -54,7 +54,7 @@ class ConfigManager:
         """Serialise SystemConfig to YAML."""
         path.parent.mkdir(parents=True, exist_ok=True)
         with open(path, "w") as f:
-            yaml.dump(config.model_dump(), f, default_flow_style=False, sort_keys=False)
+            yaml.dump(config.model_dump(mode="json"), f, default_flow_style=False, sort_keys=False)
 
     def save_sample(self, config: SampleConfig, path: Path) -> None:
         """Serialise SampleConfig to YAML."""
